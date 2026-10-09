@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --surface: 250 250 251;
+    --surface-raised: 255 255 255;
+    --surface-sunken: 244 244 246;
+    --line: 228 228 232;
+    --ink: 17 17 21;
+    --ink-muted: 90 90 100;
+    --ink-subtle: 138 138 150;
+    --brand: 24 24 30;
+    --brand-soft: 240 240 244;
+    --brand-ink: 255 255 255;
+
+    color-scheme: light;
+  }
+
+  .dark {
+    --surface: 10 10 13;
+    --surface-raised: 20 20 25;
+    --surface-sunken: 15 15 19;
+    --line: 39 39 47;
+    --ink: 244 244 246;
+    --ink-muted: 168 168 180;
+    --ink-subtle: 118 118 132;
+    --brand: 244 244 246;
+    --brand-soft: 30 30 37;
+    --brand-ink: 12 12 15;
+
+    color-scheme: dark;
+  }
+
+  * {
+    @apply border-line;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-surface text-ink antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Foco visible solo cuando se navega con teclado. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand ring-offset-2 ring-offset-surface;
+  }
+
+  ::selection {
+    @apply bg-brand text-brand-ink;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface-raised shadow-card;
+  }
+
+  .field {
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[15px] text-ink
+           placeholder:text-ink-subtle
+           focus:border-brand/40 focus:outline-none focus:ring-2 focus:ring-brand/20
+           disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-ink-muted;
+  }
+
+  /* Barra de scroll discreta, acorde al resto del UI. */
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line)) transparent;
+  }
+  .scroll-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--line));
+    border-radius: 9999px;
+  }
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

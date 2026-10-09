@@ -1,0 +1,34 @@
+{
+  "name": "pits",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pits - sistema de fidelizacion y control de estados para taller mecanico",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm run dev -w @pits/api",
+    "dev:web": "npm run dev -w @pits/web",
+    "build": "npm run build -w @pits/api && npm run build -w @pits/web",
+    "typecheck": "npm run typecheck -w @pits/api && npm run typecheck -w @pits/web",
+    "lint": "npm run lint -w @pits/api && npm run lint -w @pits/web",
+    "test": "npm run test -w @pits/api && npm run test -w @pits/web",
+    "db:seed": "npm run db:seed -w @pits/api",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.4.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "argon2@0.41.1": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true,
+    "esbuild@0.25.12": true
+  }
+}

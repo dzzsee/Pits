@@ -1,0 +1,32 @@
+node_modules/
+dist/
+build/
+coverage/
+*.local
+
+# SQLite
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+apps/api/data/
+
+# env
+.env
+.env.*
+!.env.example
+
+# PWA / service worker
+apps/web/dev-dist/
+apps/web/.vite/
+
+# editors / os
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
