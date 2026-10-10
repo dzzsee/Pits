@@ -15,11 +15,13 @@ router.get(
   '/users',
   ah(async (req, res) => {
     const role = req.query.role ? String(req.query.role) : null
-    const rows = req.db!
-      .prepare<[string | null], UserRow>(
-        `SELECT * FROM users ${role ? 'WHERE role = ?' : ''} ORDER BY role, name`,
-      )
-      .all(role)
+    // El `?` solo existe si hay filtro. Pasar el argumento igual seria un
+    // parametro de mas y el driver lanza: hay que ligar los dos.
+    const rows = role
+      ? req.db!
+          .prepare<[string], UserRow>('SELECT * FROM users WHERE role = ? ORDER BY role, name')
+          .all(role)
+      : req.db!.prepare<[], UserRow>('SELECT * FROM users ORDER BY role, name').all()
     res.json({ items: rows.map(toPublicUser) })
   }),
 )

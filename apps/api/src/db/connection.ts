@@ -2,11 +2,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { config } from '../config.js'
 import { openDatabase, type Database } from './driver.js'
+import { bootstrap } from './bootstrap.js'
 import { migrations } from './migrations.js'
 
 export type Db = Database
 
 let instance: Db | null = null
+let sourceUsed: 'dump' | 'migrations' = 'migrations'
+
+/** Como se construyó la base actual: desde el volcado o desde migraciones. */
+export function getBootstrapSource(): 'dump' | 'migrations' {
+  return sourceUsed
+}
 
 function open(file: string): Db {
   if (file !== ':memory:') {
@@ -48,14 +55,20 @@ export function migrate(db: Db): void {
 
 export function getDb(): Db {
   if (!instance) {
-    instance = open(config.databasePath)
-    migrate(instance)
+    const file = config.databasePath
+    const isFresh = file === ':memory:' || !fs.existsSync(file)
+    instance = open(file)
+    // Base nueva: se importa `pits.sql`. Base existente: solo migraciones, para
+    // no pisar datos ya escritos.
+    sourceUsed = isFresh ? 'dump' : 'migrations'
+    bootstrap(instance, sourceUsed)
   }
   return instance
 }
 
 /** Crea una BD aislada (tests, scripts). No toca la instancia global. */
-export function createDb(file = ':memory:'): Db {  const db = open(file)
+export function createDb(file = ':memory:'): Db {
+  const db = open(file)
   migrate(db)
   return db
 }

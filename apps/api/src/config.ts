@@ -32,11 +32,19 @@ const databasePath = path.isAbsolute(str('DATABASE_PATH', './data/pits.db'))
   ? str('DATABASE_PATH', './data/pits.db')
   : path.join(apiRoot, str('DATABASE_PATH', './data/pits.db'))
 
+// Volcado SQL que se importa cuando la base aún no existe. Es la fuente de
+// verdad versionable: esquema y datos en un archivo revisable, en lugar de un
+// binario que no se puede diffear.
+const seedSqlPath = path.isAbsolute(str('SEED_SQL_PATH', '../../pits.sql'))
+  ? str('SEED_SQL_PATH', '../../pits.sql')
+  : path.resolve(apiRoot, str('SEED_SQL_PATH', '../../pits.sql'))
+
 export const config = {
   env: str('NODE_ENV', 'development'),
   port: num('PORT', 3001),
   corsOrigin: list('CORS_ORIGIN', ['http://localhost:5173']),
   databasePath,
+  seedSqlPath,
   jwt: {
     secret: str('JWT_SECRET', 'dev-secret-change-me'),
     accessTtl: str('JWT_ACCESS_TTL', '15m'),

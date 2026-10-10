@@ -262,14 +262,24 @@ router.get(
   '/redemptions',
   ah(async (req, res) => {
     const status = req.query.status ? String(req.query.status) : null
-    const items = req.db!
-      .prepare<[string | null], RedemptionRow & { client_name: string }>(
-        `SELECT r.*, u.name AS client_name FROM redemptions r
-         JOIN users u ON u.id = r.client_id
-         ${status ? 'WHERE r.status = ?' : ''}
-         ORDER BY CASE r.status WHEN 'available' THEN 0 ELSE 1 END, r.id DESC LIMIT 200`,
-      )
-      .all(status)
+    // Igual que en /admin/users: el placeholder solo existe con filtro, asi que
+    // los argumentos se pasan solo cuando corresponde.
+    const items = status
+      ? req.db!
+          .prepare<[string], RedemptionRow & { client_name: string }>(
+            `SELECT r.*, u.name AS client_name FROM redemptions r
+             JOIN users u ON u.id = r.client_id
+             WHERE r.status = ?
+             ORDER BY CASE r.status WHEN 'available' THEN 0 ELSE 1 END, r.id DESC LIMIT 200`,
+          )
+          .all(status)
+      : req.db!
+          .prepare<[], RedemptionRow & { client_name: string }>(
+            `SELECT r.*, u.name AS client_name FROM redemptions r
+             JOIN users u ON u.id = r.client_id
+             ORDER BY CASE r.status WHEN 'available' THEN 0 ELSE 1 END, r.id DESC LIMIT 200`,
+          )
+          .all()
     res.json({ items })
   }),
 )

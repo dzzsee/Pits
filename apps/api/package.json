@@ -14,7 +14,11 @@
     "test:watch": "vitest",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "db:dump": "tsx scripts/dump-db.ts",    "db:dump:fresh": "tsx scripts/make-dump.ts",
+    "db:reseed": "tsx scripts/reseed.ts",
+    "db:reset": "tsx scripts/reset-db.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "sweep": "tsx scripts/sweep.ts"
   },
   "dependencies": {
     "argon2": "^0.41.1",
