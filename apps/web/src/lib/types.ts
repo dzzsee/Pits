@@ -10,16 +10,7 @@ export interface User {
 }
 
 export type StateColor =
-  | 'slate'
-  | 'sky'
-  | 'amber'
-  | 'violet'
-  | 'emerald'
-  | 'rose'
-  | 'cyan'
-  | 'orange'
-  | 'teal'
-  | 'indigo'
+  'slate' | 'sky' | 'amber' | 'violet' | 'emerald' | 'rose' | 'cyan' | 'orange' | 'teal' | 'indigo'
 
 export interface RepairState {
   id: number
@@ -209,7 +200,13 @@ export interface ReportsSummary {
     rewardsRedeemed: number
     topClients: { id: number; name: string; points: number; repairs: number }[]
   }
-  incidents: { orderId: number; code: string; state: string; note: string | null; created_at: string }[]
+  incidents: {
+    orderId: number
+    code: string
+    state: string
+    note: string | null
+    created_at: string
+  }[]
 }
 
 export interface TransitionResult {

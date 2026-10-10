@@ -71,12 +71,30 @@ function renderIcon(size) {
       }
 
       let ink = coverage(segmentSdf(px, py, stemX, stemTop, stemX, stemBottom), stroke / 2, aa)
-      ink = Math.max(ink, coverage(Math.abs(Math.hypot(px - bowlCx, py - bowlCy) - bowlR), stroke / 2, aa))
+      ink = Math.max(
+        ink,
+        coverage(Math.abs(Math.hypot(px - bowlCx, py - bowlCy) - bowlR), stroke / 2, aa),
+      )
       // Cierra el arco con dos segmentos rectos hacia el asta.
       ink = Math.max(
         ink,
-        coverage(segmentSdf(px, py, stemX, stemTop + 1.2 * scale, bowlCx - bowlR * 0.7, bowlCy - bowlR * 0.7), stroke / 2, aa),
-        coverage(segmentSdf(px, py, stemX, 19 * scale, bowlCx - bowlR * 0.7, bowlCy + bowlR * 0.7), stroke / 2, aa),
+        coverage(
+          segmentSdf(
+            px,
+            py,
+            stemX,
+            stemTop + 1.2 * scale,
+            bowlCx - bowlR * 0.7,
+            bowlCy - bowlR * 0.7,
+          ),
+          stroke / 2,
+          aa,
+        ),
+        coverage(
+          segmentSdf(px, py, stemX, 19 * scale, bowlCx - bowlR * 0.7, bowlCy + bowlR * 0.7),
+          stroke / 2,
+          aa,
+        ),
       )
 
       const alpha = Math.min(1, ink)

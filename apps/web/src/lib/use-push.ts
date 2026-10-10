@@ -40,7 +40,10 @@ export function usePush() {
     let alive = true
 
     const supported =
-      typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+      typeof window !== 'undefined' &&
+      'serviceWorker' in navigator &&
+      'PushManager' in window &&
+      'Notification' in window
 
     if (!supported) {
       setState('unsupported')

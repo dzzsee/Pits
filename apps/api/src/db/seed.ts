@@ -1,8 +1,8 @@
-import argon2 from 'argon2'
 import { config } from '../config.js'
-import { closeDb, getBootstrapSource, getDb, type Db } from './connection.js'
+import { getBootstrapSource, getDb, seedSqlPath, type Db } from './connection.js'
 import { DEFAULT_SETTINGS, setSetting, slugify } from './helpers.js'
 import { seedDemoData } from './seed-demo.js'
+import { hashPassword } from '../lib/password.js'
 
 const SUGGESTED_STATES = [
   { label: 'Recibido', color: 'slate', isTerminal: false },
@@ -23,21 +23,21 @@ const SUGGESTED_STATES = [
  * @param force   Siembra aunque la base venga del volcado `pits.sql`.
  */
 export async function seed(target?: Db, opts: { force?: boolean } = {}): Promise<void> {
-  const db = target ?? getDb()
+  const db = target ?? (await getDb())
 
   // Si la base viene del volcado `pits.sql` ya trae sus datos: sembrar encima
   // metería clientes de demo en una instalación real. Solo se siembra cuando la
   // base se construyó desde cero con migraciones, o cuando se pide `force`.
   if (!target && !opts.force && getBootstrapSource() === 'dump') {
-    console.log(`Base cargada desde ${config.seedSqlPath}`)
+    console.log(`Base cargada desde ${seedSqlPath()}`)
     return
   }
 
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-    const existing = db
+    const existing = await db
       .prepare<[string], { value: string }>('SELECT value FROM settings WHERE key = ?')
       .get(key)
-    if (!existing) setSetting(db, key, value)
+    if (!existing) await setSetting(db, key, value)
   }
 
   const insertState = db.prepare(
@@ -45,28 +45,30 @@ export async function seed(target?: Db, opts: { force?: boolean } = {}): Promise
      VALUES (?, ?, ?, ?, 1, 0, ?)
      ON CONFLICT(key) DO NOTHING`,
   )
-  SUGGESTED_STATES.forEach((s, i) =>
-    insertState.run(slugify(s.label), s.label, s.color, i, s.isTerminal ? 1 : 0),
-  )
+  for (const [i, s] of SUGGESTED_STATES.entries()) {
+    await insertState.run(slugify(s.label), s.label, s.color, i, s.isTerminal ? 1 : 0)
+  }
 
-  const existingAdmin = db
+  const existingAdmin = await db
     .prepare<[string], { id: number }>('SELECT id FROM users WHERE email = ?')
     .get(config.seed.adminEmail)
 
   if (existingAdmin) {
     console.log(`Admin ya existe: ${config.seed.adminEmail}`)
   } else {
-    const hash = await argon2.hash(config.seed.adminPassword)
-    db.prepare(
-      `INSERT INTO users (role, email, name, password_hash)
-       VALUES ('admin', ?, ?, ?)`,
-    ).run(config.seed.adminEmail, 'Administrador Pits', hash)
+    const hash = await hashPassword(config.seed.adminPassword)
+    await db
+      .prepare(
+        `INSERT INTO users (role, email, name, password_hash)
+         VALUES ('admin', ?, ?, ?)`,
+      )
+      .run(config.seed.adminEmail, 'Administrador Pits', hash)
     console.log(`Admin creado: ${config.seed.adminEmail} / ${config.seed.adminPassword}`)
   }
 
   // Datos de demo, solo si no hay clientes todavía. Un taller real no debe
   // sembrarse con Ana, Carlos ni Luis.
-  const clientCount = db
+  const clientCount = await db
     .prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM users WHERE role = 'client'")
     .get()
 
@@ -82,7 +84,9 @@ export async function seed(target?: Db, opts: { force?: boolean } = {}): Promise
 const isDirectRun = process.argv[1]?.includes('seed')
 if (isDirectRun) {
   seed()
-    .then(() => closeDb())
+    .then(() => {
+      console.log('Seed completado.')
+    })
     .catch((err) => {
       console.error(err)
       process.exitCode = 1

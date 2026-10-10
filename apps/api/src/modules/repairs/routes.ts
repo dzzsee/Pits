@@ -1,8 +1,7 @@
-import { Router } from 'express'
 import { z } from 'zod'
 import { forbidden, notFound } from '../../shared/errors.js'
-import { ah, validate } from '../../shared/http.js'
-import { authenticate, requireRole } from '../../middleware/auth.js'
+import { validate } from '../../shared/http.js'
+import { authenticate, requireRole, Router } from '../../http/router.js'
 import type { RedemptionRow, VehicleRow } from '../../db/types.js'
 import {
   addItem,
@@ -18,85 +17,70 @@ import {
 import { archiveState, createState, listStates, updateState } from './states.js'
 import { emitToUser } from '../../shared/events.js'
 
-const router = Router()
-router.use(authenticate, requireRole('mechanic', 'admin'))
+export const staffRouter = new Router()
+staffRouter.use(authenticate, requireRole('mechanic', 'admin'))
 
 /* ------------------------------ Estados ------------------------------ */
 
-router.get(
-  '/repair-states',
-  ah(async (req, res) => {
-    res.json({
-      items: listStates(req.db!, { includeInactive: req.query.includeInactive === '1' }),
-    })
-  }),
-)
+staffRouter.get('/repair-states', async (c) => {
+  c.json({
+    items: await listStates(c.db, { includeInactive: c.query.get('includeInactive') === '1' }),
+  })
+})
 
-router.post(
-  '/repair-states',
-  ah(async (req, res) => {
-    const body = validate(
-      z.object({
-        label: z.string().min(2).max(60),
-        color: z.string().optional(),
-        isIncident: z.boolean().optional(),
-        isTerminal: z.boolean().optional(),
-      }),
-      req.body,
-    )
-    res.status(201).json(createState(req.db!, body))
-  }),
-)
+staffRouter.post('/repair-states', async (c) => {
+  const body = validate(
+    z.object({
+      label: z.string().min(2).max(60),
+      color: z.string().optional(),
+      isIncident: z.boolean().optional(),
+      isTerminal: z.boolean().optional(),
+    }),
+    c.body,
+  )
+  c.json(await createState(c.db, body), 201)
+})
 
-router.patch(
-  '/repair-states/:id',
-  ah(async (req, res) => {
-    const body = validate(
-      z.object({
-        label: z.string().min(2).max(60).optional(),
-        color: z.string().optional(),
-        position: z.number().int().optional(),
-        isIncident: z.boolean().optional(),
-        isTerminal: z.boolean().optional(),
-        isActive: z.boolean().optional(),
-      }),
-      req.body,
-    )
-    res.json(updateState(req.db!, Number(req.params.id), body))
-  }),
-)
+staffRouter.patch('/repair-states/:id', async (c) => {
+  const body = validate(
+    z.object({
+      label: z.string().min(2).max(60).optional(),
+      color: z.string().optional(),
+      position: z.number().int().optional(),
+      isIncident: z.boolean().optional(),
+      isTerminal: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+    }),
+    c.body,
+  )
+  c.json(await updateState(c.db, Number(c.params.id), body))
+})
 
-router.delete(
-  '/repair-states/:id',
-  ah(async (req, res) => {
-    archiveState(req.db!, Number(req.params.id))
-    res.status(204).end()
-  }),
-)
+staffRouter.delete('/repair-states/:id', async (c) => {
+  await archiveState(c.db, Number(c.params.id))
+  c.status = 204
+})
 
 /* ------------------------------ Ordenes ----------------------------- */
 
-router.get(
-  '/repairs',
-  ah(async (req, res) => {
-    const q = req.query
-    const result = listOrders(
-      req.db!,
-      {
-        status: q.status as 'open' | undefined,
-        stateId: q.stateId ? Number(q.stateId) : undefined,
-        mechanicId: q.mechanicId ? Number(q.mechanicId) : undefined,
-        clientId: q.clientId ? Number(q.clientId) : undefined,
-        q: q.q ? String(q.q) : undefined,
-        from: q.from ? String(q.from) : undefined,
-        to: q.to ? String(q.to) : undefined,
-        limit: q.limit ? Number(q.limit) : undefined,
-        offset: q.offset ? Number(q.offset) : undefined,
-      },
-    )
-    res.json(result)
-  }),
-)
+staffRouter.get('/repairs', async (c) => {
+  const q = c.query
+  const num = (key: string) => (q.get(key) ? Number(q.get(key)) : undefined)
+
+  c.json(
+    await listOrders(c.db, {
+      status: (q.get('status') as 'open' | undefined) ?? undefined,
+      stateId: num('stateId'),
+      mechanicId: num('mechanicId'),
+      clientId: num('clientId'),
+      q: q.get('q') ?? undefined,
+      from: q.get('from') ?? undefined,
+      to: q.get('to') ?? undefined,
+      limit: num('limit'),
+      offset: num('offset'),
+    }),
+  )
+})
 
 const createOrderSchema = z.object({
   clientId: z.number().int(),
@@ -106,43 +90,38 @@ const createOrderSchema = z.object({
   mileage: z.number().int().min(0).nullable().optional(),
 })
 
-router.post(
-  '/repairs',
-  ah(async (req, res) => {
-    const body = validate(createOrderSchema, req.body)
-    const id = createOrder(req.db!, {
-      ...body,
-      mechanicId: body.mechanicId ?? req.user!.id,
-    })
-    res.status(201).json(getOrderDetail(req.db!, id, { staffView: true }))
-  }),
-)
+staffRouter.post('/repairs', async (c) => {
+  const body = validate(createOrderSchema, c.body)
+  const id = await createOrder(c.db, {
+    ...body,
+    mechanicId: body.mechanicId ?? c.user!.id,
+  })
+  c.json(await getOrderDetail(c.db, id, { staffView: true }), 201)
+})
 
 /** Clientes con sus vehiculos: el wizard de nueva orden empieza aqui. */
-router.get(
-  '/clients',
-  ah(async (req, res) => {
-    const q = req.query.q ? String(req.query.q) : ''
-    const like = `%${q}%`
-    const clients = req.db!
-      .prepare<[string, string], { id: number; name: string; email: string; phone: string | null }>(
-        `SELECT id, name, email, phone FROM users
-         WHERE role = 'client' AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)
-         ORDER BY name LIMIT 50`,
-      )
-      .all(like, like, like)
+staffRouter.get('/clients', async (c) => {
+  const like = `%${c.query.get('q') ?? ''}%`
+  const clients = await c.db
+    .prepare<[string, string], { id: number; name: string; email: string; phone: string | null }>(
+      `SELECT id, name, email, phone FROM users
+       WHERE role = 'client' AND (name LIKE ? OR email LIKE ? OR phone LIKE ?)
+       ORDER BY name LIMIT 50`,
+    )
+    .all(like, like, like)
 
-    const vehicles = req.db!.prepare<[], VehicleRow>('SELECT * FROM vehicles ORDER BY plate').all()
-    res.json({ items: clients.map((c) => ({ ...c, vehicles: vehicles.filter((v) => v.client_id === c.id) })) })
-  }),
-)
+  const vehicles = await c.db.prepare<[], VehicleRow>('SELECT * FROM vehicles ORDER BY plate').all()
+  c.json({
+    items: clients.map((cl) => ({
+      ...cl,
+      vehicles: vehicles.filter((v) => v.client_id === cl.id),
+    })),
+  })
+})
 
-router.get(
-  '/repairs/:id',
-  ah(async (req, res) => {
-    res.json(getOrderDetail(req.db!, Number(req.params.id), { staffView: true }))
-  }),
-)
+staffRouter.get('/repairs/:id', async (c) => {
+  c.json(await getOrderDetail(c.db, Number(c.params.id), { staffView: true }))
+})
 
 const patchOrderSchema = z.object({
   mechanicId: z.number().int().nullable().optional(),
@@ -151,13 +130,9 @@ const patchOrderSchema = z.object({
   status: z.enum(['open', 'cancelled']).optional(),
 })
 
-router.patch(
-  '/repairs/:id',
-  ah(async (req, res) => {
-    const body = validate(patchOrderSchema, req.body)
-    res.json(updateOrder(req.db!, Number(req.params.id), body))
-  }),
-)
+staffRouter.patch('/repairs/:id', async (c) => {
+  c.json(await updateOrder(c.db, Number(c.params.id), validate(patchOrderSchema, c.body)))
+})
 
 /**
  * El estado lo escribe el mecanico. Si el texto no existe todavia, se crea
@@ -171,23 +146,20 @@ const transitionSchema = z.object({
   isIncident: z.boolean().optional().default(false),
 })
 
-router.post(
-  '/repairs/:id/transition',
-  ah(async (req, res) => {
-    const body = validate(transitionSchema, req.body)
-    res.json(
-      applyTransition(req.db!, {
-        orderId: Number(req.params.id),
-        toStateLabel: body.state,
-        actorId: req.user!.id,
-        note: body.note ?? null,
-        notifyClient: body.notifyClient,
-        isClientVisible: body.isClientVisible,
-        isIncident: body.isIncident,
-      }),
-    )
-  }),
-)
+staffRouter.post('/repairs/:id/transition', async (c) => {
+  const body = validate(transitionSchema, c.body)
+  c.json(
+    await applyTransition(c.db, {
+      orderId: Number(c.params.id),
+      toStateLabel: body.state,
+      actorId: c.user!.id,
+      note: body.note ?? null,
+      notifyClient: body.notifyClient,
+      isClientVisible: body.isClientVisible,
+      isIncident: body.isIncident,
+    }),
+  )
+})
 
 const itemSchema = z.object({
   kind: z.enum(['part', 'labor', 'service']),
@@ -196,76 +168,61 @@ const itemSchema = z.object({
   unitPriceCents: z.number().int().min(0).max(100_000_000),
 })
 
-router.post(
-  '/repairs/:id/items',
-  ah(async (req, res) => {
-    const body = validate(itemSchema, req.body)
-    res.status(201).json(addItem(req.db!, Number(req.params.id), body))
-  }),
-)
+staffRouter.post('/repairs/:id/items', async (c) => {
+  const body = validate(itemSchema, c.body)
+  c.json(await addItem(c.db, Number(c.params.id), body), 201)
+})
 
-router.patch(
-  '/items/:itemId',
-  ah(async (req, res) => {
-    const body = validate(
-      z.object({
-        description: z.string().min(1).max(200).optional(),
-        qty: z.number().positive().max(999).optional(),
-        unitPriceCents: z.number().int().min(0).optional(),
-        status: z.enum(['pending', 'done', 'cancelled']).optional(),
-      }),
-      req.body,
-    )
-    res.json(updateItem(req.db!, Number(req.params.itemId), body))
-  }),
-)
+staffRouter.patch('/items/:itemId', async (c) => {
+  const body = validate(
+    z.object({
+      description: z.string().min(1).max(200).optional(),
+      qty: z.number().positive().max(999).optional(),
+      unitPriceCents: z.number().int().min(0).optional(),
+      status: z.enum(['pending', 'done', 'cancelled']).optional(),
+    }),
+    c.body,
+  )
+  c.json(await updateItem(c.db, Number(c.params.itemId), body))
+})
 
-router.delete(
-  '/items/:itemId',
-  ah(async (req, res) => {
-    removeItem(req.db!, Number(req.params.itemId))
-    res.status(204).end()
-  }),
-)
+staffRouter.delete('/items/:itemId', async (c) => {
+  await removeItem(c.db, Number(c.params.itemId))
+  c.status = 204
+})
 
-router.post(
-  '/repairs/:id/invoice',
-  ah(async (req, res) => {
-    const body = validate(
-      z.object({
-        paymentMethod: z.string().max(40).optional(),
-        markPaid: z.boolean().optional().default(true),
-      }),
-      req.body,
-    )
-    res.status(201).json(issueInvoice(req.db!, Number(req.params.id), body))
-  }),
-)
+staffRouter.post('/repairs/:id/invoice', async (c) => {
+  const body = validate(
+    z.object({
+      paymentMethod: z.string().max(40).optional(),
+      markPaid: z.boolean().optional().default(true),
+    }),
+    c.body,
+  )
+  c.json(await issueInvoice(c.db, Number(c.params.id), body), 201)
+})
 
 /* --------------------------- Motoricos ------------------------------ */
 
-router.get(
-  '/mechanics',
-  ah(async (req, res) => {
-    const items = req.db!
+staffRouter.get('/mechanics', async (c) => {
+  c.json({
+    items: await c.db
       .prepare<[], { id: number; name: string; email: string }>(
         "SELECT id, name, email FROM users WHERE role IN ('mechanic','admin') AND is_active = 1 ORDER BY name",
       )
-      .all()
-    res.json({ items })
-  }),
-)
+      .all(),
+  })
+})
 
 /* ----------------------------- Canjes ------------------------------- */
 
-router.get(
-  '/redemptions',
-  ah(async (req, res) => {
-    const status = req.query.status ? String(req.query.status) : null
-    // Igual que en /admin/users: el placeholder solo existe con filtro, asi que
-    // los argumentos se pasan solo cuando corresponde.
-    const items = status
-      ? req.db!
+staffRouter.get('/redemptions', async (c) => {
+  const status = c.query.get('status')
+  // Igual que en /admin/users: el placeholder solo existe con filtro, asi que
+  // los argumentos se pasan solo cuando corresponde.
+  c.json({
+    items: status
+      ? await c.db
           .prepare<[string], RedemptionRow & { client_name: string }>(
             `SELECT r.*, u.name AS client_name FROM redemptions r
              JOIN users u ON u.id = r.client_id
@@ -273,39 +230,37 @@ router.get(
              ORDER BY CASE r.status WHEN 'available' THEN 0 ELSE 1 END, r.id DESC LIMIT 200`,
           )
           .all(status)
-      : req.db!
+      : await c.db
           .prepare<[], RedemptionRow & { client_name: string }>(
             `SELECT r.*, u.name AS client_name FROM redemptions r
              JOIN users u ON u.id = r.client_id
              ORDER BY CASE r.status WHEN 'available' THEN 0 ELSE 1 END, r.id DESC LIMIT 200`,
           )
-          .all()
-    res.json({ items })
-  }),
-)
+          .all(),
+  })
+})
 
 /** El cliente entrega su codigo; el taller lo marca como usado. */
-router.post(
-  '/redemptions/:code/redeem',
-  ah(async (req, res) => {
-    const code = String(req.params.code).trim().toUpperCase()
-    const redemption = req.db!
-      .prepare<[string], RedemptionRow>('SELECT * FROM redemptions WHERE code = ?')
-      .get(code)
-    if (!redemption) throw notFound('Codigo no encontrado')
-    if (redemption.status !== 'available') throw forbidden('Ese codigo ya fue usado o expiro')
+staffRouter.post('/redemptions/:code/redeem', async (c) => {
+  const code = (c.params.code ?? '').trim().toUpperCase()
+  const redemption = await c.db
+    .prepare<[string], RedemptionRow>('SELECT * FROM redemptions WHERE code = ?')
+    .get(code)
+  if (!redemption) throw notFound('Codigo no encontrado')
+  if (redemption.status !== 'available') throw forbidden('Ese codigo ya fue usado o expiro')
 
-    req.db!
-      .prepare(
-        "UPDATE redemptions SET status = 'used', redeemed_at = datetime('now'), redeemed_by = ? WHERE id = ?",
-      )
-      .run(req.user!.id, redemption.id)
+  await c.db
+    .prepare(
+      "UPDATE redemptions SET status = 'used', redeemed_at = datetime('now'), redeemed_by = ? WHERE id = ?",
+    )
+    .run(c.user!.id, redemption.id)
 
-    // El cliente tiene la app abierta: que vea el canje al instante.
-    emitToUser(redemption.client_id, { type: 'loyalty.updated' })
+  // El cliente tiene la app abierta: que vea el canje al instante.
+  emitToUser(redemption.client_id, { type: 'loyalty.updated' })
 
-    res.json(req.db!.prepare<[number], RedemptionRow>('SELECT * FROM redemptions WHERE id = ?').get(redemption.id))
-  }),
-)
-
-export default router
+  c.json(
+    await c.db
+      .prepare<[number], RedemptionRow>('SELECT * FROM redemptions WHERE id = ?')
+      .get(redemption.id),
+  )
+})

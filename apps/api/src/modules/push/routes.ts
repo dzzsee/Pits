@@ -1,7 +1,6 @@
-import { Router } from 'express'
 import { z } from 'zod'
-import { ah, validate } from '../../shared/http.js'
-import { authenticate } from '../../middleware/auth.js'
+import { validate } from '../../shared/http.js'
+import { authenticate, Router } from '../../http/router.js'
 import {
   getVapidPublicKey,
   isPushEnabled,
@@ -9,41 +8,30 @@ import {
   removeSubscription,
 } from './sender.js'
 
-const router = Router()
-router.use(authenticate)
+export const pushRouter = new Router()
+pushRouter.use(authenticate)
 
-router.get(
-  '/config',
-  ah(async (_req, res) => {
-    res.json({ enabled: isPushEnabled(), publicKey: getVapidPublicKey() })
-  }),
-)
+pushRouter.get('/config', (c) => {
+  c.json({ enabled: isPushEnabled(), publicKey: getVapidPublicKey() })
+})
 
 const subSchema = z.object({
   endpoint: z.string().url(),
   keys: z.object({ p256dh: z.string().min(10), auth: z.string().min(4) }),
 })
 
-router.post(
-  '/subscribe',
-  ah(async (req, res) => {
-    if (!isPushEnabled()) {
-      res.status(503).json({ error: { code: 'push_disabled', message: 'Push no esta configurado' } })
-      return
-    }
-    const body = validate(subSchema, req.body)
-    registerSubscription(req.db!, req.user!.id, body, req.headers['user-agent'])
-    res.status(201).json({ ok: true })
-  }),
-)
+pushRouter.post('/subscribe', async (c) => {
+  if (!isPushEnabled()) {
+    c.json({ error: { code: 'push_disabled', message: 'Push no esta configurado' } }, 503)
+    return
+  }
+  const body = validate(subSchema, c.body)
+  await registerSubscription(c.db, c.user!.id, body, c.headers.get('user-agent') ?? undefined)
+  c.json({ ok: true }, 201)
+})
 
-router.delete(
-  '/subscribe',
-  ah(async (req, res) => {
-    const body = validate(z.object({ endpoint: z.string().url() }), req.body)
-    removeSubscription(req.db!, req.user!.id, body.endpoint)
-    res.status(204).end()
-  }),
-)
-
-export default router
+pushRouter.delete('/subscribe', async (c) => {
+  const body = validate(z.object({ endpoint: z.string().url() }), c.body)
+  await removeSubscription(c.db, c.user!.id, body.endpoint)
+  c.status = 204
+})

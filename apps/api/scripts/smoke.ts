@@ -11,8 +11,9 @@
  */
 import assert from 'node:assert/strict'
 
-const PORT = Number(process.env.SMOKE_PORT ?? 3111)
-const BASE = `http://localhost:${PORT}/api`
+// Apunta al despliegue con SMOKE_BASE=https://tu-worker.workers.dev
+const BASE =
+  process.env.SMOKE_BASE ?? `http://localhost:${Number(process.env.SMOKE_PORT ?? 3111)}/api`
 
 async function call(path, opts = {}) {
   const res = await fetch(BASE + path, {
@@ -150,11 +151,10 @@ const eventSeen = await (async () => {
   return false
 })()
 
-check(
-  'el evento llego por SSE antes de 1s',
-  eventSeen && Date.now() - started < 1000,
-  { ms: Date.now() - started, recibidos: events.map((e) => e.type) },
-)
+check('el evento llego por SSE antes de 1s', eventSeen && Date.now() - started < 1000, {
+  ms: Date.now() - started,
+  recibidos: events.map((e) => e.type),
+})
 
 check(
   'el cliente recibio tambien una notificacion',
@@ -226,9 +226,15 @@ check('export CSV', csv.status === 200 && csvText.startsWith('Codigo,'), {
 
 const available = loyalty.body?.redemptions?.find((r) => r.status === 'available')
 if (available) {
-  const used = await call(`/staff/redemptions/${available.code}/redeem`, { method: 'POST', token: mech })
+  const used = await call(`/staff/redemptions/${available.code}/redeem`, {
+    method: 'POST',
+    token: mech,
+  })
   check('canje por el taller', used.status === 200, { codigo: available.code })
-  const again = await call(`/staff/redemptions/${available.code}/redeem`, { method: 'POST', token: mech })
+  const again = await call(`/staff/redemptions/${available.code}/redeem`, {
+    method: 'POST',
+    token: mech,
+  })
   check('no se puede canjear dos veces', again.status >= 400, { status: again.status })
 } else {
   console.log('--  sin codigos disponibles para probar el canje')

@@ -1,56 +1,66 @@
 import { twMerge } from 'tailwind-merge'
+import { clsx, type ClassValue } from 'clsx'
 
-/** Clases por color de estado. Se amplia en shared/colors.ts del API. */
+/**
+ * Clases por color de estado.
+ *
+ * El taller crea sus propios estados y cada uno trae un color. Sobre el fondo
+ * casi negro, un tono a saturacion plena canta demasiado: estos son los
+ * mismos diez tonos con la luz bajada para que el acento ambar de la marca
+ * siga siendo lo unico que brilla.
+ *
+ * Se amplia en `shared/colors.ts` del API.
+ */
 export const stateColorClasses: Record<string, { dot: string; chip: string; bar: string }> = {
   slate: {
-    dot: 'bg-slate-400',
-    chip: 'bg-slate-100 text-slate-700 dark:bg-slate-900/60 dark:text-slate-300',
-    bar: 'bg-slate-400',
+    dot: 'bg-slate-500',
+    chip: 'bg-slate-500/10 text-slate-300',
+    bar: 'bg-slate-500',
   },
   sky: {
-    dot: 'bg-sky-500',
-    chip: 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300',
-    bar: 'bg-sky-500',
+    dot: 'bg-sky-600',
+    chip: 'bg-sky-600/10 text-sky-400',
+    bar: 'bg-sky-600',
   },
   amber: {
-    dot: 'bg-amber-500',
-    chip: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300',
-    bar: 'bg-amber-500',
+    dot: 'bg-amber-600',
+    chip: 'bg-amber-600/10 text-amber-400',
+    bar: 'bg-amber-600',
   },
   violet: {
-    dot: 'bg-violet-500',
-    chip: 'bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300',
-    bar: 'bg-violet-500',
+    dot: 'bg-violet-600',
+    chip: 'bg-violet-600/10 text-violet-400',
+    bar: 'bg-violet-600',
   },
   emerald: {
-    dot: 'bg-emerald-500',
-    chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300',
-    bar: 'bg-emerald-500',
+    dot: 'bg-emerald-600',
+    chip: 'bg-emerald-600/10 text-emerald-400',
+    bar: 'bg-emerald-600',
   },
   rose: {
-    dot: 'bg-rose-500',
-    chip: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
-    bar: 'bg-rose-500',
+    dot: 'bg-rose-600',
+    chip: 'bg-rose-600/10 text-rose-400',
+    bar: 'bg-rose-600',
   },
   cyan: {
-    dot: 'bg-cyan-500',
-    chip: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300',
-    bar: 'bg-cyan-500',
+    dot: 'bg-cyan-600',
+    chip: 'bg-cyan-600/10 text-cyan-400',
+    bar: 'bg-cyan-600',
   },
   orange: {
-    dot: 'bg-orange-500',
-    chip: 'bg-orange-50 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300',
-    bar: 'bg-orange-500',
+    dot: 'bg-orange-600',
+    chip: 'bg-orange-600/10 text-orange-400',
+    bar: 'bg-orange-600',
   },
   teal: {
-    dot: 'bg-teal-500',
-    chip: 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300',
-    bar: 'bg-teal-500',
+    dot: 'bg-teal-600',
+    chip: 'bg-teal-600/10 text-teal-400',
+    bar: 'bg-teal-600',
   },
   indigo: {
-    dot: 'bg-indigo-500',
-    chip: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300',
-    bar: 'bg-indigo-500',
+    dot: 'bg-indigo-600',
+    chip: 'bg-indigo-600/10 text-indigo-400',
+    bar: 'bg-indigo-600',
   },
 }
 
@@ -60,6 +70,9 @@ export function stateColor(color: string | null | undefined) {
   return (color && stateColorClasses[color]) || fallback
 }
 
-export function cx(...parts: (string | false | null | undefined)[]): string {
-  return twMerge(parts.filter(Boolean).join(' '))
+/** Los diez tonos, en el orden en que los ve el admin al elegir color. */
+export const statePalette = Object.keys(stateColorClasses)
+
+export function cx(...parts: ClassValue[]): string {
+  return twMerge(clsx(parts))
 }

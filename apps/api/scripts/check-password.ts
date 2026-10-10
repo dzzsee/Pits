@@ -1,8 +1,8 @@
 /**
- * Comprueba que contrasena corresponde a un hash argon2id guardado.
+ * Comprueba que una contrasena corresponde a un hash guardado.
  * Uso: npx tsx scripts/check-password.ts <hash> <candidato...>
  */
-import argon2 from 'argon2'
+import { verifyPassword } from '../src/lib/password.js'
 
 const [, , hash, ...candidates] = process.argv
 
@@ -12,6 +12,6 @@ if (!hash || candidates.length === 0) {
 }
 
 for (const candidate of candidates) {
-  const ok = await argon2.verify(hash, candidate)
+  const ok = await verifyPassword(hash, candidate)
   console.log(`${ok ? 'MATCH' : 'no   '}  ${candidate}`)
 }

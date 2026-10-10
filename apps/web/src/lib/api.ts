@@ -127,7 +127,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const payload = text ? (JSON.parse(text) as unknown) : null
 
   if (!res.ok) {
-    const err = (payload as { error?: { message?: string; code?: string; details?: unknown } } | null)?.error
+    const err = (
+      payload as { error?: { message?: string; code?: string; details?: unknown } } | null
+    )?.error
     throw new ApiError(
       res.status,
       err?.message ?? 'Algo salio mal. Intenta de nuevo.',
@@ -140,11 +142,11 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 export const api = {
-  get: <T,>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+  get: <T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...options, method: 'GET' }),
-  post: <T,>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
-  patch: <T,>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
-  del: <T,>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body }),
+  post: <T>(path: string, body?: unknown) => request<T>(path, { method: 'POST', body }),
+  patch: <T>(path: string, body?: unknown) => request<T>(path, { method: 'PATCH', body }),
+  del: <T>(path: string, body?: unknown) => request<T>(path, { method: 'DELETE', body }),
 }
 
 /** Descarga un CSV autenticado: fetch + blob para no perder el token. */

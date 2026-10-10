@@ -4,8 +4,8 @@ import { Link } from 'react-router-dom'
 import { useSession } from '@/app/session'
 import { api, ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { Alert, Button, Card, Field, Input, SectionHeader } from '@/components/ui'
-import { PageHeader } from '@/layouts/ClientLayout'
+import { Alert, Button, Card, Field, Input, PageHeader } from '@/components/ui'
+import { IconLogout } from '@/components/icons'
 import { usePush } from '@/lib/use-push'
 import { keys } from '@/lib/query-keys'
 
@@ -14,7 +14,9 @@ export function AccountPage() {
   const queryClient = useQueryClient()
   const [profile, setProfile] = useState({ name: user?.name ?? '', phone: user?.phone ?? '' })
   const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' })
-  const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'danger'; text: string } | null>(
+    null,
+  )
 
   const saveProfile = useMutation({
     mutationFn: () =>
@@ -28,7 +30,10 @@ export function AccountPage() {
       await queryClient.invalidateQueries({ queryKey: keys.dashboard() })
     },
     onError: (err) =>
-      setFeedback({ tone: 'danger', text: err instanceof ApiError ? err.message : 'No pudimos guardar' }),
+      setFeedback({
+        tone: 'danger',
+        text: err instanceof ApiError ? err.message : 'No pudimos guardar',
+      }),
   })
 
   const changePassword = useMutation({
@@ -47,76 +52,95 @@ export function AccountPage() {
   const push = usePush()
 
   return (
-    <div className="animate-fade-in">
-      <PageHeader title="Cuenta" subtitle="Tus datos y notificaciones" />
+    <div className="enter max-w-2xl">
+      <PageHeader eyebrow="Tu taller" title="Cuenta" subtitle="Tus datos y notificaciones" />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div>
-          <SectionHeader title="Datos personales" />
+      <div className="space-y-10">
+        {/* Datos */}
+        <section>
+          <div className="rule mb-4">
+            <span className="eyebrow">Datos personales</span>
+          </div>
           <Card>
             <form
-              className="space-y-3"
+              className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
                 setFeedback(null)
                 saveProfile.mutate()
               }}
             >
-              {feedback?.tone === 'danger' ? <Alert>{feedback.text}</Alert> : null}
-              {feedback?.tone === 'success' ? <Alert tone="success">{feedback.text}</Alert> : null}
+              {feedback ? (
+                <Alert tone={feedback.tone}>{feedback.text}</Alert>
+              ) : null}
 
               <Field label="Nombre">
-                <Input
-                  required
-                  value={profile.name}
-                  onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
-                />
+                {(props) => (
+                  <Input
+                    {...props}
+                    required
+                    value={profile.name}
+                    onChange={(e) => setProfile((p) => ({ ...p, name: e.target.value }))}
+                  />
+                )}
               </Field>
+
               <Field label="Correo" hint="El correo no se puede cambiar.">
-                <Input value={user?.email ?? ''} disabled />
+                {(props) => <Input {...props} value={user?.email ?? ''} disabled />}
               </Field>
+
               <Field label="Telefono">
-                <Input
-                  value={profile.phone}
-                  onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="+1 809 555 0101"
-                />
+                {(props) => (
+                  <Input
+                    {...props}
+                    value={profile.phone}
+                    onChange={(e) => setProfile((p) => ({ ...p, phone: e.target.value }))}
+                    placeholder="+1 809 555 0101"
+                  />
+                )}
               </Field>
-              <p className="text-[12px] text-ink-subtle">
-                Miembro desde {formatDate(user?.created_at)}
-              </p>
+
+              <p className="eyebrow">Miembro desde {formatDate(user?.created_at)}</p>
+
               <Button type="submit" loading={saveProfile.isPending}>
                 Guardar cambios
               </Button>
             </form>
           </Card>
-        </div>
+        </section>
 
-        <div className="space-y-6">
-          <div>
-            <SectionHeader title="Notificaciones" />
-            <Card>
-              <PushSettings
-                state={push.state}
-                busy={push.busy}
-                onSubscribe={() => void push.subscribe()}
-              />
-            </Card>
+        {/* Notificaciones */}
+        <section>
+          <div className="rule mb-4">
+            <span className="eyebrow">Notificaciones</span>
           </div>
+          <Card>
+            <PushSettings
+              state={push.state}
+              busy={push.busy}
+              onSubscribe={() => void push.subscribe()}
+            />
+          </Card>
+        </section>
 
-          <div>
-            <SectionHeader title="Contrasena" />
-            <Card>
-              <form
-                className="space-y-3"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  setFeedback(null)
-                  changePassword.mutate()
-                }}
-              >
-                <Field label="Contrasena actual">
+        {/* Contrasena */}
+        <section>
+          <div className="rule mb-4">
+            <span className="eyebrow">Contrasena</span>
+          </div>
+          <Card>
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                setFeedback(null)
+                changePassword.mutate()
+              }}
+            >
+              <Field label="Contrasena actual">
+                {(props) => (
                   <Input
+                    {...props}
                     type="password"
                     autoComplete="current-password"
                     required
@@ -125,9 +149,13 @@ export function AccountPage() {
                       setPasswords((p) => ({ ...p, currentPassword: e.target.value }))
                     }
                   />
-                </Field>
-                <Field label="Nueva contrasena" hint="Minimo 8 caracteres.">
+                )}
+              </Field>
+
+              <Field label="Nueva contrasena" hint="Minimo 8 caracteres.">
+                {(props) => (
                   <Input
+                    {...props}
                     type="password"
                     autoComplete="new-password"
                     required
@@ -135,29 +163,38 @@ export function AccountPage() {
                     value={passwords.newPassword}
                     onChange={(e) => setPasswords((p) => ({ ...p, newPassword: e.target.value }))}
                   />
-                </Field>
-                <Button type="submit" variant="secondary" loading={changePassword.isPending}>
-                  Actualizar contrasena
-                </Button>
-              </form>
-            </Card>
-          </div>
+                )}
+              </Field>
 
-          <div>
-            <SectionHeader title="Sesion" />
-            <Card>
-              <Button variant="danger" onClick={logout} className="w-full">
-                Cerrar sesion
+              <Button type="submit" variant="secondary" loading={changePassword.isPending}>
+                Actualizar contrasena
               </Button>
-              <Link
-                to="/entrar"
-                className="mt-3 block text-center text-[13px] text-ink-muted hover:text-ink"
-              >
-                Cambiar de cuenta
-              </Link>
-            </Card>
+            </form>
+          </Card>
+        </section>
+
+        {/* Sesion */}
+        <section>
+          <div className="rule mb-4">
+            <span className="eyebrow">Sesion</span>
           </div>
-        </div>
+          <Card>
+            <Button
+              variant="danger"
+              onClick={logout}
+              className="w-full"
+              icon={<IconLogout className="h-4 w-4" />}
+            >
+              Cerrar sesion
+            </Button>
+            <Link
+              to="/entrar"
+              className="mt-4 block text-center font-mono text-[11px] uppercase tracking-[0.1em] text-ink-muted transition-colors hover:text-accent"
+            >
+              Cambiar de cuenta
+            </Link>
+          </Card>
+        </section>
       </div>
     </div>
   )
@@ -204,11 +241,13 @@ function PushSettings({
   const info = copy[state]
 
   return (
-    <div>
-      <p className="text-[15px] font-medium">{info.title}</p>
-      <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{info.body}</p>
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{info.title}</p>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink-muted">{info.body}</p>
+      </div>
       {info.action ? (
-        <Button size="sm" className="mt-3" onClick={onSubscribe} loading={busy}>
+        <Button size="sm" onClick={onSubscribe} loading={busy}>
           Activar
         </Button>
       ) : null}

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { formatRelative } from '@/lib/format'
 import { cx } from '@/shared/colors'
+import { IconBell } from '@/components/icons'
 import type { AppNotification } from '@/lib/types'
 import { keys } from '@/lib/query-keys'
 
@@ -25,6 +26,11 @@ export function NotificationBell() {
 
   const markRead = useMutation({
     mutationFn: (id: number) => api.patch(`/notifications/${id}/read`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.notifications() }),
+  })
+
+  const markAllRead = useMutation({
+    mutationFn: () => api.patch('/notifications/read-all'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.notifications() }),
   })
 
@@ -52,38 +58,32 @@ export function NotificationBell() {
         onClick={() => setOpen((v) => !v)}
         aria-label={unread > 0 ? `Notificaciones (${unread} sin leer)` : 'Notificaciones'}
         aria-expanded={open}
-        className="relative flex h-9 w-9 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
+        className="relative flex h-9 w-9 items-center justify-center rounded text-ink-muted transition-colors hover:bg-surface-hover hover:text-ink"
       >
-        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
-          <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6M13.7 19a2 2 0 0 1-3.4 0" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        <IconBell className="h-[18px] w-[18px]" />
         {unread > 0 ? (
-          <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+          <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 font-mono text-[10px] font-semibold text-black">
             {unread > 9 ? '9+' : unread}
           </span>
         ) : null}
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] animate-scale-in overflow-hidden rounded-2xl border border-line bg-surface-raised shadow-lift">
-          <div className="flex items-center justify-between border-b border-line px-4 py-3">
-            <p className="text-sm font-semibold">Notificaciones</p>
+        <div className="animate-scale-in absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-line bg-surface shadow-panel">
+          <div className="rule px-4 py-3">
+            <span className="eyebrow">Notificaciones</span>
             {unread > 0 ? (
               <button
                 type="button"
-                onClick={() => {
-                  api.patch('/notifications/read-all').then(() =>
-                    queryClient.invalidateQueries({ queryKey: keys.notifications() }),
-                  )
-                }}
-                className="text-[12px] font-medium text-ink-muted hover:text-ink"
+                onClick={() => markAllRead.mutate()}
+                className="font-mono text-[11px] uppercase tracking-[0.08em] text-accent transition-colors hover:text-accent-hover"
               >
-                Marcar leidas
+                Marcar todas
               </button>
             ) : null}
           </div>
 
-          <div className="scroll-slim max-h-80 overflow-y-auto">
+          <div className="scroll-slim max-h-96 overflow-y-auto">
             {data?.items.length ? (
               <ul className="divide-y divide-line">
                 {data.items.map((n) => (
@@ -95,21 +95,29 @@ export function NotificationBell() {
                         setOpen(false)
                       }}
                       className={cx(
-                        'block px-4 py-3 transition-colors hover:bg-surface-sunken/60',
-                        !n.read_at && 'bg-brand/[0.03]',
+                        'block px-4 py-3.5 transition-colors hover:bg-surface-hover',
+                        !n.read_at && 'bg-accent/[0.04]',
                       )}
                     >
-                      <div className="flex items-start gap-2.5">
+                      <div className="flex items-start gap-3">
                         <span
                           className={cx(
                             'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full',
-                            n.read_at ? 'bg-transparent' : 'bg-brand',
+                            n.read_at ? 'bg-transparent' : 'bg-accent',
                           )}
+                          aria-hidden="true"
                         />
                         <div className="min-w-0">
-                          <p className="text-[13px] font-medium leading-snug">{n.title}</p>
+                          <p
+                            className={cx(
+                              'text-[13px] leading-snug',
+                              n.read_at ? 'text-ink-muted' : 'font-medium text-ink',
+                            )}
+                          >
+                            {n.title}
+                          </p>
                           <p className="mt-0.5 text-[13px] leading-snug text-ink-muted">{n.body}</p>
-                          <p className="mt-1 text-[11px] text-ink-subtle">
+                          <p className="mt-1.5 font-mono text-[11px] text-ink-muted/70">
                             {formatRelative(n.created_at)}
                           </p>
                         </div>
@@ -119,7 +127,7 @@ export function NotificationBell() {
                 ))}
               </ul>
             ) : (
-              <p className="px-4 py-10 text-center text-sm text-ink-subtle">
+              <p className="px-6 py-12 text-center text-sm text-ink-muted">
                 Aca te avisamos cuando tu reparacion avance.
               </p>
             )}

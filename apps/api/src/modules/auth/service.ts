@@ -1,9 +1,11 @@
-import argon2 from 'argon2'
-import jwt, { type SignOptions } from 'jsonwebtoken'
 import { config } from '../../config.js'
 import type { Db } from '../../db/connection.js'
 import type { Role, UserRow } from '../../db/types.js'
 import { conflict, unauthorized } from '../../shared/errors.js'
+import { hashPassword, verifyPassword } from '../../lib/password.js'
+import { sign, verify } from '../../lib/jwt.js'
+
+export { hashPassword, verifyPassword }
 
 export interface TokenPayload {
   sub: number
@@ -31,40 +33,32 @@ export function toPublicUser(u: UserRow): PublicUser {
   }
 }
 
-export async function hashPassword(plain: string): Promise<string> {
-  return argon2.hash(plain)
+export async function signAccess(user: Pick<UserRow, 'id' | 'role'>): Promise<string> {
+  return sign(
+    { sub: user.id, role: user.role, type: 'access' },
+    config.jwt.secret,
+    config.jwt.accessTtl,
+  )
 }
 
-export async function verifyPassword(hash: string, plain: string): Promise<boolean> {
-  try {
-    return await argon2.verify(hash, plain)
-  } catch {
-    return false
+export async function signRefresh(user: Pick<UserRow, 'id' | 'role'>): Promise<string> {
+  return sign(
+    { sub: user.id, role: user.role, type: 'refresh' },
+    config.jwt.secret,
+    config.jwt.refreshTtl,
+  )
+}
+
+export async function verifyToken(
+  token: string,
+  expected: 'access' | 'refresh',
+): Promise<TokenPayload> {
+  const result = await verify(token, config.jwt.secret)
+  if (!result.ok) {
+    throw unauthorized(result.error === 'expired' ? 'Sesion expirada' : 'Token invalido')
   }
-}
-
-export function signAccess(user: Pick<UserRow, 'id' | 'role'>): string {
-  const payload: TokenPayload = { sub: user.id, role: user.role, type: 'access' }
-  return jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.accessTtl as SignOptions['expiresIn'] })
-}
-
-export function signRefresh(user: Pick<UserRow, 'id' | 'role'>): string {
-  const payload: TokenPayload = { sub: user.id, role: user.role, type: 'refresh' }
-  return jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.refreshTtl as SignOptions['expiresIn'] })
-}
-
-export function verifyToken(token: string, expected: 'access' | 'refresh'): TokenPayload {
-  try {
-    const payload = jwt.verify(token, config.jwt.secret) as unknown as TokenPayload
-    if (payload.type !== expected) throw unauthorized('Token de tipo incorrecto')
-    return payload
-  } catch (err) {
-    if (err instanceof Error && err.name === 'TokenExpiredError') {
-      throw unauthorized('Sesion expirada')
-    }
-    if (err instanceof Error && err.message === 'Token de tipo incorrecto') throw err
-    throw unauthorized('Token invalido')
-  }
+  if (result.claims.type !== expected) throw unauthorized('Token de tipo incorrecto')
+  return { sub: result.claims.sub, role: result.claims.role as Role, type: result.claims.type }
 }
 
 export interface RegisterInput {
@@ -77,31 +71,27 @@ export interface RegisterInput {
 
 export async function register(db: Db, input: RegisterInput): Promise<UserRow> {
   const email = input.email.trim().toLowerCase()
-  const exists = db.prepare<[string], { id: number }>('SELECT id FROM users WHERE email = ?').get(email)
+  const exists = await db
+    .prepare<[string], { id: number }>('SELECT id FROM users WHERE email = ?')
+    .get(email)
   if (exists) throw conflict('Ese correo ya esta registrado')
 
   const role = input.role ?? 'client'
   const hash = await hashPassword(input.password)
-  const info = db
-    .prepare(
-      `INSERT INTO users (role, email, phone, name, password_hash) VALUES (?, ?, ?, ?, ?)`,
-    )
+  const info = await db
+    .prepare(`INSERT INTO users (role, email, phone, name, password_hash) VALUES (?, ?, ?, ?, ?)`)
     .run(role, email, input.phone?.trim() || null, input.name.trim(), hash)
 
   const id = Number(info.lastInsertRowid)
   if (role === 'client') {
-    db.prepare('INSERT OR IGNORE INTO loyalty_accounts (client_id) VALUES (?)').run(id)
+    await db.prepare('INSERT OR IGNORE INTO loyalty_accounts (client_id) VALUES (?)').run(id)
   }
 
-  return db.prepare<[number], UserRow>('SELECT * FROM users WHERE id = ?').get(id)!
+  return (await db.prepare<[number], UserRow>('SELECT * FROM users WHERE id = ?').get(id))!
 }
 
-export async function authenticate(
-  db: Db,
-  email: string,
-  password: string,
-): Promise<UserRow> {
-  const user = db
+export async function authenticate(db: Db, email: string, password: string): Promise<UserRow> {
+  const user = await db
     .prepare<[string], UserRow>('SELECT * FROM users WHERE email = ?')
     .get(email.trim().toLowerCase())
 
@@ -113,8 +103,8 @@ export async function authenticate(
   return user
 }
 
-export function findById(db: Db, id: number): UserRow {
-  const user = db.prepare<[number], UserRow>('SELECT * FROM users WHERE id = ?').get(id)
+export async function findById(db: Db, id: number): Promise<UserRow> {
+  const user = await db.prepare<[number], UserRow>('SELECT * FROM users WHERE id = ?').get(id)
   if (!user) throw unauthorized('Usuario no encontrado')
   return user
 }

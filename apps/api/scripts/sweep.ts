@@ -6,8 +6,9 @@
  *
  *   npm run sweep -w @pits/api
  */
-const PORT = Number(process.env.SMOKE_PORT ?? 3001)
-const BASE = `http://localhost:${PORT}/api`
+// Apunta al despliegue con SMOKE_BASE=https://tu-worker.workers.dev
+const BASE =
+  process.env.SMOKE_BASE ?? `http://localhost:${Number(process.env.SMOKE_PORT ?? 3001)}/api`
 
 async function login(email, password) {
   const res = await fetch(`${BASE}/auth/login`, {

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useSession, homeFor } from '@/app/session'
 import { Spinner } from '@/components/ui'
+import { UpdateToast } from '@/components/UpdateToast'
 import { ClientLayout } from '@/layouts/ClientLayout'
 import { StaffLayout } from '@/layouts/StaffLayout'
 import { LoginPage } from '@/features/auth/LoginPage'
@@ -22,8 +23,9 @@ import type { Role } from '@/lib/types'
 
 function FullScreenLoader() {
   return (
-    <div className="flex h-full items-center justify-center">
-      <Spinner className="h-6 w-6 text-ink-subtle" />
+    <div className="flex h-full flex-col items-center justify-center gap-4">
+      <Spinner className="h-6 w-6 text-accent" />
+      <p className="eyebrow">Cargando</p>
     </div>
   )
 }
@@ -44,7 +46,12 @@ export function App() {
   if (status === 'loading') return <FullScreenLoader />
 
   return (
-    <Routes>
+    <>
+      {/* El aviso de actualizacion vive aqui, no en los layouts: si cuelga de
+          la pantalla, quien esta en `/entrar` se queda sin el y con el service
+          worker viejo sirviendo el bundle anterior. */}
+      <UpdateToast />
+      <Routes>
       <Route
         path="/entrar"
         element={user ? <Navigate to={homeFor(user.role)} replace /> : <LoginPage />}
@@ -102,6 +109,7 @@ export function App() {
       </Route>
 
       <Route path="*" element={<Navigate to={user ? homeFor(user.role) : '/entrar'} replace />} />
-    </Routes>
+      </Routes>
+    </>
   )
 }

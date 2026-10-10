@@ -1,71 +1,97 @@
-import cors from 'cors'
-import express from 'express'
+/**
+ * Servidor de desarrollo.
+ *
+ * Usa `node:http` con un adaptador a `fetch`, para que la app se ejercite con
+ * el mismo `handleRequest` que usa el Worker. Sin esto habria dos
+ * implementaciones del API y la de produccion no se probaria nunca en local.
+ */
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { Readable } from 'node:stream'
 import { config } from './config.js'
-import { getDb } from './db/connection.js'
+import { loadNodeConfig } from './config.node.js'
+import { closeDb, getDb } from './db/connection.js'
 import { seed } from './db/seed.js'
-import { attachDb, authenticate } from './middleware/auth.js'
-import authRouter from './modules/auth/routes.js'
-import meRouter, { notificationsRouter } from './modules/notifications/routes.js'
-import staffRouter from './modules/repairs/routes.js'
-import adminRouter from './modules/admin/routes.js'
-import pushRouter from './modules/push/routes.js'
-import realtimeRouter from './modules/realtime/routes.js'
-import { getOrderDetail } from './modules/repairs/service.js'
-import { ah, errorHandler, notFoundHandler } from './shared/http.js'
-import { forbidden } from './shared/errors.js'
+import { createApp, handleRequest } from './app.js'
+import { errorResponse } from './shared/http.js'
 
-export function createApp() {
-  const app = express()
-  const db = getDb()
-
-  app.use(express.json({ limit: '256kb' }))
-  app.use(cors({ origin: config.corsOrigin, credentials: true }))
-  app.use(attachDb(db))
-
-  app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, shop: config.shop.name, currency: config.shop.currency })
-  })
-
-  app.use('/api/auth', authRouter)
-  app.use('/api/me', meRouter)
-  app.use('/api/notifications', notificationsRouter)
-  app.use('/api/push', pushRouter)
-  app.use('/api', realtimeRouter)
-  app.use('/api/staff', staffRouter)
-  app.use('/api/admin', adminRouter)
-
-  /**
-   * Detalle de una reparacion. El cliente solo accede a las suyas y sin las
-   * notas internas del mecanico (staffView = false).
-   */
-  app.get(
-    '/api/repairs/:id',
-    authenticate,
-    ah(async (req, res) => {
-      const detail = getOrderDetail(req.db!, Number(req.params.id), {
-        staffView: req.user!.role !== 'client',
-      })
-    if (req.user!.role === 'client' && detail.order.client_id !== req.user!.id) {
-      throw forbidden()
-    }
-    res.json(detail)
-    }),
-  )
-
-  app.use(notFoundHandler)
-  app.use(errorHandler)
-
-  return app
+/** El cuerpo de la peticion viaja como `ReadableStream`: Node >= 18 lo provee. */
+function toWeb(stream: Readable): ReadableStream<Uint8Array> {
+  return Readable.toWeb(stream) as unknown as ReadableStream<Uint8Array>
 }
 
-export async function start() {
-  await seed()
+async function toRequest(req: IncomingMessage): Promise<Request> {
+  const url = `http://${req.headers.host ?? 'localhost'}${req.url ?? '/'}`
+  const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
+
+  return new Request(url, {
+    method: req.method,
+    headers: req.headers as HeadersInit,
+    body: hasBody ? (toWeb(req) as unknown as BodyInit) : undefined,
+    // `Request` con cuerpo en streaming exige `duplex`; sin esto Node lanza.
+    ...(hasBody ? { duplex: 'half' } : {}),
+  } as RequestInit)
+}
+
+async function write(res: ServerResponse, response: Response): Promise<void> {
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, key) => {
+    headers[key] = value
+  })
+
+  res.writeHead(response.status, headers)
+
+  if (!response.body) {
+    res.end()
+    return
+  }
+
+  // El stream SSE no termina nunca, asi que se vuelca chunk a chunk en vez de
+  // acumularlo entero en memoria.
+  const reader = response.body.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!res.write(Buffer.from(value))) {
+      await new Promise((resolve) => res.once('drain', resolve))
+    }
+  }
+  res.end()
+}
+
+export async function start(): Promise<void> {
+  await loadNodeConfig()
+
+  const db = await getDb()
+  await seed(db)
+
   const app = createApp()
-  app.listen(config.port, () => {
+
+  const server = createServer((req, res) => {
+    void (async () => {
+      try {
+        await write(res, await handleRequest(app, db, await toRequest(req)))
+      } catch (err) {
+        if (res.headersSent) {
+          res.end()
+          return
+        }
+        await write(res, errorResponse(err))
+      }
+    })()
+  })
+
+  server.listen(config.port, () => {
     console.log(`\n  ${config.shop.name} API`)
     console.log(`  http://localhost:${config.port}`)
     console.log(`  moneda: ${config.shop.currency}\n`)
   })
+
+  const shutdown = () => {
+    server.close()
+    void closeDb().finally(() => process.exit(0))
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 }
 
 const isDirectRun = process.argv[1]?.endsWith('index.ts') || process.argv[1]?.endsWith('index.js')

@@ -1,34 +1,38 @@
+/**
+ * Sistema visual de Pits.
+ *
+ * Swiss Modernism: retícula, tipografía comprimida, un único acento ámbar y
+ * jerarquía por peso y espacio en vez de por sombras. Tema único oscuro.
+ *
+ * Las custom properties de `:root` son la fuente de verdad y las lee
+ * `tailwind.config.js`, así que un color se cambia en un solo sitio.
+ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* --- Tokens --- */
+
 @layer base {
   :root {
-    --surface: 250 250 251;
-    --surface-raised: 255 255 255;
-    --surface-sunken: 244 244 246;
-    --line: 228 228 232;
-    --ink: 17 17 21;
-    --ink-muted: 90 90 100;
-    --ink-subtle: 138 138 150;
-    --brand: 24 24 30;
-    --brand-soft: 240 240 244;
-    --brand-ink: 255 255 255;
+    --bg: 10 10 10;
+    --surface: 17 17 17;
+    --surface-hover: 26 26 26;
+    --text: 245 245 245;
+    --text-muted: 122 122 122;
+    --accent: 245 158 11;
+    --accent-hover: 217 119 6;
+    --accent-glow: 245 158 11;
+    --border: 34 34 34;
+    --border-light: 51 51 51;
+    --success: 34 197 94;
+    --success-glow: 34 197 94;
+    --danger: 239 68 68;
 
-    color-scheme: light;
-  }
-
-  .dark {
-    --surface: 10 10 13;
-    --surface-raised: 20 20 25;
-    --surface-sunken: 15 15 19;
-    --line: 39 39 47;
-    --ink: 244 244 246;
-    --ink-muted: 168 168 180;
-    --ink-subtle: 118 118 132;
-    --brand: 244 244 246;
-    --brand-soft: 30 30 37;
-    --brand-ink: 12 12 15;
+    --ease-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
     color-scheme: dark;
   }
@@ -40,20 +44,77 @@
   html {
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
+    font-feature-settings: 'kern' 1, 'liga' 1;
   }
 
   body {
-    @apply bg-surface text-ink antialiased;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    @apply bg-bg font-sans text-ink antialiased;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /**
+   * Texturas de fondo. Va en el body y no en un elemento del árbol: la rejilla
+   * y el ruido son el entorno de la app entera, no el estilo de una pantalla.
+   * `fixed` para que no se repitan al hacer scroll, y sin eventos para no
+   * estorbar a la interacción.
+   */
+  body::before,
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  body::before {
+    /* Retícula de 80px: la estructura sobre la que se apoya todo lo demás. */
+    opacity: 0.045;
+    background-image:
+      linear-gradient(90deg, rgb(245 245 245) 1px, transparent 1px),
+      linear-gradient(0deg, rgb(245 245 245) 1px, transparent 1px);
+    background-size: 80px 80px;
+  }
+
+  body::after {
+    /* Grano. Rompe las superficies planas de `#0a0a0a`. */
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+  }
+
+  /* El contenido va por encima de las texturas. */
+  #root {
+    position: relative;
+    z-index: 1;
   }
 
   /* Foco visible solo cuando se navega con teclado. */
   :focus-visible {
-    @apply outline-none ring-2 ring-brand ring-offset-2 ring-offset-surface;
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-bg;
   }
 
   ::selection {
-    @apply bg-brand text-brand-ink;
+    @apply bg-accent text-black;
+  }
+
+  /* Barra de scroll discreta, acorde al resto del UI. */
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--border-light)) transparent;
+  }
+  .scroll-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--border-light));
+    border-radius: 9999px;
+  }
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -63,40 +124,131 @@
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
     }
   }
 }
 
+/* --- Componentes --- */
+
 @layer components {
+  /**
+   * La tarjeta base. Sin sombra difusa: la profundidad la da el borde de 1px
+   * y, al interactuar, el halo del acento.
+   */
   .card {
-    @apply rounded-2xl border border-line bg-surface-raised shadow-card;
+    @apply rounded-lg border border-line bg-surface transition-colors duration-300;
   }
 
+  .card-hover {
+    @apply transition-[transform,border-color,box-shadow] duration-[400ms] hover:-translate-y-1
+           hover:border-line-light hover:shadow-glow-lg;
+  }
+
+  /* Botón. Alturas y pesos pensados para pulsación táctil. */
+  .btn {
+    @apply inline-flex select-none items-center justify-center rounded border border-transparent
+           font-sans text-sm font-semibold leading-none tracking-[0.02em]
+           transition-[background-color,border-color,color,transform,box-shadow] duration-300
+           disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-accent text-black hover:-translate-y-0.5 hover:bg-accent-hover hover:shadow-glow active:translate-y-0;
+  }
+
+  .btn-secondary {
+    @apply border-line bg-transparent text-ink-muted hover:border-line-light hover:bg-surface-hover hover:text-ink;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-ink-muted hover:bg-surface-hover hover:text-ink;
+  }
+
+  .btn-danger {
+    @apply border-danger/40 bg-danger/10 text-danger hover:border-danger hover:bg-danger hover:text-black;
+  }
+
+  .btn-sm {
+    @apply h-8 gap-1.5 px-3 text-[13px];
+  }
+  .btn-md {
+    @apply h-10 gap-2 px-4;
+  }
+  .btn-lg {
+    @apply h-12 gap-2 px-6 text-[15px];
+  }
+
+  /* Campos. El foco se marca con el borde de acento y su halo. */
   .field {
-    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[15px] text-ink
-           placeholder:text-ink-subtle
-           focus:border-brand/40 focus:outline-none focus:ring-2 focus:ring-brand/20
+    @apply w-full rounded border border-line bg-bg px-3.5 py-2.5 text-[15px] text-ink
+           placeholder:text-ink-muted/70
+           transition-colors duration-200
+           focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/20
            disabled:cursor-not-allowed disabled:opacity-60;
   }
 
-  .label {
-    @apply mb-1.5 block text-[13px] font-medium text-ink-muted;
+  select.field {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none' stroke='%23f59e0b' stroke-width='2'%3E%3Cpath d='m1 1 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 1rem center;
+    background-size: 10px 6px;
   }
 
-  /* Barra de scroll discreta, acorde al resto del UI. */
-  .scroll-slim {
-    scrollbar-width: thin;
-    scrollbar-color: rgb(var(--line)) transparent;
+  select.field option {
+    @apply bg-surface text-ink;
   }
-  .scroll-slim::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+
+  /**
+   * Micro-etiqueta. Es la unidad de jerarquia del sistema: todo lo que
+   * etiqueta una seccion va en mono, en mayusculas y con tracking amplio.
+   */
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-ink-muted;
   }
-  .scroll-slim::-webkit-scrollbar-thumb {
-    background-color: rgb(var(--line));
-    border-radius: 9999px;
+
+  /**
+   * Encabezado de seccion con linea divisoria. La regla es lo que separa:
+   * hace falta un separador explicito cuando la jerarquia es horizontal.
+   */
+  .rule {
+    @apply flex items-center gap-4 text-ink-muted;
   }
-  .scroll-slim::-webkit-scrollbar-track {
-    background: transparent;
+
+  .rule::after {
+    content: '';
+    @apply h-px flex-1 bg-line;
+  }
+
+  /* Cifra grande. Display comprimida sobre cifras tabulares. */
+  .stat-value {
+    @apply font-display leading-none tracking-[0.02em] text-ink tabular-nums;
+  }
+
+  /* Barra de progreso de 4px con el punto que late al llegar al final. */
+  .track {
+    @apply h-1 overflow-hidden rounded-full bg-line;
+  }
+
+  .track-fill {
+    @apply h-full rounded-full bg-accent transition-[width] duration-[400ms];
+  }
+
+  /* Contenedor de entrada de página. Una sola secuencia orquestada, no un
+     efecto por tarjeta: el stagger se aplica al primer nivel de cada bloque. */
+  .enter > * {
+    animation: fade-in-up 800ms var(--ease-out) backwards;
+  }
+  .enter > *:nth-child(1) {
+    animation-delay: 0.1s;
+  }
+  .enter > *:nth-child(2) {
+    animation-delay: 0.25s;
+  }
+  .enter > *:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+  .enter > *:nth-child(n + 4) {
+    animation-delay: 0.55s;
   }
 }

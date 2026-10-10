@@ -2,8 +2,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { Alert, Button, Card, EmptyState, Field, Input, SectionHeader, Skeleton, Textarea } from '@/components/ui'
-import { PageHeader } from '@/layouts/ClientLayout'
+import {
+  Alert,
+  Button,
+  Card,
+  Dialog,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  Skeleton,
+  Textarea,
+} from '@/components/ui'
+import { IconCarFront, IconEdit, IconPlus } from '@/components/icons'
 import type { Vehicle } from '@/lib/types'
 import { keys } from '@/lib/query-keys'
 
@@ -15,109 +26,118 @@ const EMPTY = { plate: '', brand: '', model: '', year: '', mileage: '', vin: '',
 
 export function VehiclesPage() {
   const queryClient = useQueryClient()
-  const [editing, setEditing] = useState<Vehicle | null>(null)
-  const [creating, setCreating] = useState(false)
+  /** `null` cerrado; un objeto abre el dialogo, con `vehicle` si es edicion. */
+  const [form, setForm] = useState<{ vehicle?: Vehicle } | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: keys.vehicles(),
     queryFn: () => api.get<VehiclesResponse>('/me/vehicles'),
   })
 
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: keys.vehicles() })
+    await queryClient.invalidateQueries({ queryKey: keys.dashboard() })
+  }
+
   return (
-    <div className="animate-fade-in">
+    <div className="enter">
       <PageHeader
+        eyebrow="Tu taller"
         title="Mis vehiculos"
         subtitle="Ficha y kilometraje de cada carro"
         action={
-          !creating && !editing ? (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              Agregar
-            </Button>
-          ) : null
+          <Button size="sm" icon={<IconPlus className="h-4 w-4" />} onClick={() => setForm({})}>
+            Agregar
+          </Button>
         }
       />
 
-      {creating ? (
-        <VehicleForm
-          onClose={() => setCreating(false)}
-          onSaved={async () => {
-            setCreating(false)
-            await queryClient.invalidateQueries({ queryKey: keys.vehicles() })
-            await queryClient.invalidateQueries({ queryKey: keys.dashboard() })
-          }}
-        />
-      ) : null}
-
-      {editing ? (
-        <VehicleForm
-          vehicle={editing}
-          onClose={() => setEditing(null)}
-          onSaved={async () => {
-            setEditing(null)
-            await queryClient.invalidateQueries({ queryKey: keys.vehicles() })
-            await queryClient.invalidateQueries({ queryKey: keys.dashboard() })
-          }}
-        />
-      ) : null}
-
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Skeleton className="h-36" />
-          <Skeleton className="h-36" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Skeleton className="h-44" />
+          <Skeleton className="h-44" />
         </div>
       ) : !data?.items.length ? (
         <Card className="p-0">
           <EmptyState
+            icon={<IconCarFront className="h-14 w-14" />}
             title="Sin vehiculos registrados"
-            description="Agrega tu carro para que el taller lo associe a tus reparaciones."
-            action={<Button size="sm" onClick={() => setCreating(true)}>Agregar vehiculo</Button>}
+            description="Agrega tu carro para que el taller lo asocie a tus reparaciones."
+            action={
+              <Button icon={<IconPlus className="h-4 w-4" />} onClick={() => setForm({})}>
+                Agregar vehiculo
+              </Button>
+            }
           />
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           {data.items.map((v) => (
-            <Card key={v.id} className="transition-shadow duration-150 hover:shadow-lift">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-mono text-[15px] font-semibold tracking-tight">{v.plate}</p>
-                  <p className="mt-0.5 text-sm text-ink-muted">
-                    {v.brand} {v.model}
-                  </p>
-                </div>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(v)}>
-                  Editar
-                </Button>
-              </div>
-              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-3 text-[13px]">
-                <div>
-                  <dt className="text-ink-subtle">Anio</dt>
-                  <dd className="mt-0.5 font-medium">{v.year ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt className="text-ink-subtle">Kilometraje</dt>
-                  <dd className="mt-0.5 font-medium">
-                    {v.mileage ? `${v.mileage.toLocaleString('es-DO')} km` : '—'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-ink-subtle">Visitas</dt>
-                  <dd className="mt-0.5 font-medium">{v.order_count ?? 0}</dd>
-                </div>
-                {v.vin ? (
-                  <div className="col-span-2">
-                    <dt className="text-ink-subtle">VIN</dt>
-                    <dd className="mt-0.5 font-mono text-[12px]">{v.vin}</dd>
-                  </div>
-                ) : null}
-              </dl>
-              <p className="mt-3 text-[12px] text-ink-subtle">
-                Agregado el {formatDate(v.created_at)}
-              </p>
-            </Card>
+            <VehicleCard key={v.id} vehicle={v} onEdit={() => setForm({ vehicle: v })} />
           ))}
         </div>
       )}
+
+      {form ? (
+        <VehicleForm
+          vehicle={form.vehicle}
+          onClose={() => setForm(null)}
+          onSaved={async () => {
+            setForm(null)
+            await refresh()
+          }}
+        />
+      ) : null}
     </div>
+  )
+}
+
+function VehicleCard({ vehicle, onEdit }: { vehicle: Vehicle; onEdit: () => void }) {
+  return (
+    <Card className="card-hover group">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {/* La placa en mono grande: es lo que identifica el carro de un
+              vistazo, igual que en la calle. */}
+          <p className="font-mono text-xl font-semibold tracking-[0.12em]">{vehicle.plate}</p>
+          <p className="mt-1.5 text-sm text-ink-muted">
+            {vehicle.brand} {vehicle.model}
+            {vehicle.year ? ` · ${vehicle.year}` : ''}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Editar ${vehicle.plate}`}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-muted opacity-0 transition-all duration-300 hover:bg-surface-hover hover:text-accent focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <IconEdit className="h-4 w-4" />
+        </button>
+      </div>
+
+      <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-line pt-4">
+        <div>
+          <dt className="eyebrow">Kilometraje</dt>
+          <dd className="mt-1.5 text-sm tabular-nums">
+            {vehicle.mileage ? `${vehicle.mileage.toLocaleString('es-DO')} km` : '—'}
+          </dd>
+        </div>
+        <div>
+          <dt className="eyebrow">Visitas</dt>
+          <dd className="mt-1.5 text-sm tabular-nums">{vehicle.order_count ?? 0}</dd>
+        </div>
+        {vehicle.vin ? (
+          <div className="col-span-2">
+            <dt className="eyebrow">VIN</dt>
+            <dd className="mt-1.5 font-mono text-xs">{vehicle.vin}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      <p className="mt-4 font-mono text-[11px] text-ink-muted/70">
+        Agregado el {formatDate(vehicle.created_at)}
+      </p>
+    </Card>
   )
 }
 
@@ -130,7 +150,7 @@ function VehicleForm({
   onClose: () => void
   onSaved: () => void
 }) {
-  const [form, setForm] = useState(
+  const [values, setValues] = useState(
     vehicle
       ? {
           plate: vehicle.plate,
@@ -148,13 +168,13 @@ function VehicleForm({
   const save = useMutation({
     mutationFn: () => {
       const payload = {
-        plate: form.plate.trim().toUpperCase(),
-        brand: form.brand.trim(),
-        model: form.model.trim(),
-        year: form.year ? Number(form.year) : undefined,
-        mileage: form.mileage ? Number(form.mileage) : undefined,
-        vin: form.vin.trim() || undefined,
-        notes: form.notes.trim() || undefined,
+        plate: values.plate.trim().toUpperCase(),
+        brand: values.brand.trim(),
+        model: values.model.trim(),
+        year: values.year ? Number(values.year) : undefined,
+        mileage: values.mileage ? Number(values.mileage) : undefined,
+        vin: values.vin.trim() || undefined,
+        notes: values.notes.trim() || undefined,
       }
       return vehicle
         ? api.patch<Vehicle>(`/me/vehicles/${vehicle.id}`, payload)
@@ -164,14 +184,34 @@ function VehicleForm({
     onError: (err) => setError(err instanceof ApiError ? err.message : 'No pudimos guardar'),
   })
 
-  const set = (key: keyof typeof form) => (e: { target: { value: string } }) =>
-    setForm((f) => ({ ...f, [key]: e.target.value }))
+  const set = (key: keyof typeof values) => (e: { target: { value: string } }) =>
+    setValues((v) => ({ ...v, [key]: e.target.value }))
 
   return (
-    <Card className="mb-6 animate-scale-in">
-      <SectionHeader title={vehicle ? 'Editar vehiculo' : 'Nuevo vehiculo'} />
+    <Dialog
+      open
+      onClose={onClose}
+      title={vehicle ? 'Editar vehiculo' : 'Nuevo vehiculo'}
+      description="Los datos del carro que el taller usa para identificarlo."
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => {
+              setError(null)
+              save.mutate()
+            }}
+            loading={save.isPending}
+          >
+            Guardar
+          </Button>
+        </>
+      }
+    >
       <form
-        className="space-y-3"
+        className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault()
           setError(null)
@@ -179,54 +219,89 @@ function VehicleForm({
         }}
       >
         {error ? <Alert>{error}</Alert> : null}
-        <div className="grid gap-3 sm:grid-cols-2">
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Placa">
-            <Input required value={form.plate} onChange={set('plate')} placeholder="ABC-123" />
+            {(props) => (
+              <Input
+                {...props}
+                required
+                className="font-mono uppercase tracking-[0.08em]"
+                value={values.plate}
+                onChange={set('plate')}
+                placeholder="ABC-123"
+              />
+            )}
           </Field>
+
           <Field label="VIN" hint="Opcional">
-            <Input value={form.vin} onChange={set('vin')} placeholder="Numero de chasis" />
+            {(props) => (
+              <Input
+                {...props}
+                className="font-mono text-sm"
+                value={values.vin}
+                onChange={set('vin')}
+                placeholder="Numero de chasis"
+              />
+            )}
           </Field>
+
           <Field label="Marca">
-            <Input required value={form.brand} onChange={set('brand')} placeholder="Toyota" />
+            {(props) => (
+              <Input {...props} required value={values.brand} onChange={set('brand')} placeholder="Toyota" />
+            )}
           </Field>
+
           <Field label="Modelo">
-            <Input required value={form.model} onChange={set('model')} placeholder="Corolla" />
+            {(props) => (
+              <Input {...props} required value={values.model} onChange={set('model')} placeholder="Corolla" />
+            )}
           </Field>
+
           <Field label="Anio">
-            <Input
-              type="number"
-              inputMode="numeric"
-              value={form.year}
-              onChange={set('year')}
-              placeholder="2020"
-            />
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                inputMode="numeric"
+                value={values.year}
+                onChange={set('year')}
+                placeholder="2020"
+              />
+            )}
           </Field>
+
           <Field label="Kilometraje">
-            <Input
-              type="number"
-              inputMode="numeric"
-              value={form.mileage}
-              onChange={set('mileage')}
-              placeholder="50000"
-            />
+            {(props) => (
+              <Input
+                {...props}
+                type="number"
+                inputMode="numeric"
+                value={values.mileage}
+                onChange={set('mileage')}
+                placeholder="50000"
+              />
+            )}
           </Field>
         </div>
+
         <Field label="Notas">
-          <Textarea
-            value={form.notes}
-            onChange={set('notes')}
-            placeholder="Color, detalles, preferencias..."
-          />
+          {(props) => (
+            <Textarea
+              {...props}
+              value={values.notes}
+              onChange={set('notes')}
+              placeholder="Color, detalles, preferencias..."
+            />
+          )}
         </Field>
-        <div className="flex items-center gap-2 pt-1">
-          <Button type="submit" loading={save.isPending}>
-            Guardar
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-        </div>
+
+        {/* Boton de submit real: sin esto, pulsar Enter en un campo no guarda
+            aunque el boton de abajo exista. */}
+        <button type="submit" className="sr-only" aria-hidden="true" tabIndex={-1}>
+          Guardar
+        </button>
       </form>
-    </Card>
+    </Dialog>
   )
 }

@@ -1,11 +1,19 @@
-import type { FormEvent } from 'react'
-import { useState } from 'react'
+import type { FormEvent, ReactNode } from 'react'
+import { useId, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { homeFor, useSession } from '@/app/session'
 import { Alert, Button, Field, Input } from '@/components/ui'
 import { Logo } from '@/components/Logo'
+import { IconEye, IconLock } from '@/components/icons'
 import { ApiError } from '@/lib/api'
 
+/**
+ * Marco de las pantallas de acceso.
+ *
+ * A pantalla partida: la izquierda lleva la marca y la promesa, la derecha el
+ * formulario. Antes era un formulario centrado sobre el fondo plano, que es
+ * la composicion mas anonima posible para la primera pantalla que ve alguien.
+ */
 export function AuthShell({
   title,
   subtitle,
@@ -14,21 +22,105 @@ export function AuthShell({
 }: {
   title: string
   subtitle: string
-  children: React.ReactNode
-  footer: React.ReactNode
+  children: ReactNode
+  footer: ReactNode
 }) {
   return (
-    <div className="flex min-h-full flex-col justify-center px-5 py-10">
-      <div className="mx-auto w-full max-w-sm animate-fade-in">
-        <div className="mb-8 flex flex-col items-center text-center">
-          <Logo className="h-10 w-10" />
-          <h1 className="mt-4 text-xl font-semibold tracking-tight">{title}</h1>
-          <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>
+    <div className="flex min-h-full flex-col lg:flex-row">
+      {/* Lado de marca. La retícula del body hace de textura de fondo. */}
+      <div className="relative hidden flex-1 flex-col justify-between border-r border-line px-14 py-14 lg:flex">
+        <div className="flex items-center gap-3">
+          <Logo className="h-9 w-9" />
+          <span className="font-display text-2xl uppercase tracking-[0.08em]">Pits</span>
         </div>
-        {children}
-        <div className="mt-6 text-center text-sm text-ink-muted">{footer}</div>
+
+        <div className="max-w-md">
+          <h1 className="font-display text-[clamp(3.5rem,7vw,5.5rem)] uppercase leading-[0.88] tracking-[0.01em]">
+            Tu carro
+            <br />
+            en buenas
+            <br />
+            <span className="text-accent">manos</span>
+          </h1>
+          <p className="mt-6 text-ink-muted">
+            Sigue cada paso de la reparacion y gana puntos por cada visita. Sin llamadas, sin
+            esperas.
+          </p>
+        </div>
+
+        <p className="eyebrow">Servicio de taller</p>
+      </div>
+
+      {/* Lado del formulario. */}
+      <div className="flex flex-1 flex-col justify-center px-8 py-14 sm:px-12 lg:px-16">
+        <div className="enter mx-auto w-full max-w-sm">
+          <div className="mb-8 lg:hidden">
+            <Logo className="h-10 w-10" />
+          </div>
+
+          <h2 className="font-display text-3xl uppercase leading-none tracking-[0.02em]">{title}</h2>
+          <p className="mt-2 text-sm text-ink-muted">{subtitle}</p>
+
+          <div className="mt-8">{children}</div>
+
+          <div className="mt-8 border-t border-line pt-6 text-center text-sm text-ink-muted">
+            {footer}
+          </div>
+        </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Campo de contrasena con alternar visibilidad. Escribes la clave del taller
+ * en un movil, a veces delante de gente: tenerla en texto plano a proposito no
+ * ayuda a nadie.
+ */
+function PasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+  placeholder,
+  error,
+}: {
+  label: string
+  value: string
+  onChange: (next: string) => void
+  autoComplete: string
+  placeholder?: string
+  error?: string
+}) {
+  const [visible, setVisible] = useState(false)
+  const id = useId()
+
+  return (
+    <Field label={label} error={error}>
+      {(props) => (
+        <div className="relative">
+          <input
+            {...props}
+            id={id}
+            type={visible ? 'text' : 'password'}
+            autoComplete={autoComplete}
+            required
+            value={value}
+            placeholder={placeholder}
+            onChange={(e) => onChange(e.target.value)}
+            className="field pr-11"
+          />
+          <button
+            type="button"
+            onClick={() => setVisible((v) => !v)}
+            aria-label={visible ? 'Ocultar contrasena' : 'Mostrar contrasena'}
+            className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded text-ink-muted transition-colors hover:text-ink"
+          >
+            {visible ? <IconLock className="h-4 w-4" /> : <IconEye className="h-4 w-4" />}
+          </button>
+        </div>
+      )}
+    </Field>
   )
 }
 
@@ -65,39 +157,40 @@ export function LoginPage() {
       footer={
         <>
           Todavia no tienes cuenta?{' '}
-          <Link to="/registro" className="font-medium text-ink underline underline-offset-4">
+          <Link to="/registro" className="font-medium text-accent underline underline-offset-4">
             Crear una
           </Link>
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form onSubmit={onSubmit} className="space-y-5">
         {error ? <Alert>{error}</Alert> : null}
+
         <Field label="Correo">
-          <Input
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="tucorreo@email.com"
-          />
+          {(props) => (
+            <Input
+              {...props}
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tucorreo@email.com"
+            />
+          )}
         </Field>
-        <Field label="Contrasena">
-          <Input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-          />
-        </Field>
-        <Button type="submit" className="w-full" loading={loading}>
+
+        <PasswordField
+          label="Contrasena"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+        />
+
+        <Button type="submit" size="lg" className="w-full" loading={loading}>
           Entrar
         </Button>
       </form>
-
     </AuthShell>
   )
 }

@@ -1,14 +1,7 @@
-import type { NextFunction, Request, RequestHandler, Response } from 'express'
 import type { ZodError, ZodSchema } from 'zod'
 import { HttpError } from './errors.js'
 
-/** Envuelve handlers async para que los rechazos lleguen a errorHandler. */
-export function ah(fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>): RequestHandler {
-  return (req, res, next) => {
-    fn(req, res, next).catch(next)
-  }
-}
-
+/** Valida el cuerpo contra un esquema zod y devuelve los datos ya parseados. */
 export function validate<T>(schema: ZodSchema<T>, data: unknown): T {
   const result = schema.safeParse(data)
   if (!result.success) {
@@ -21,39 +14,41 @@ function flattenZod(error: ZodError) {
   return error.issues.map((i) => ({ path: i.path.join('.'), message: i.message }))
 }
 
-export function errorHandler(
-  err: unknown,
-  _req: Request,
-  res: Response,
-  _next: NextFunction,
-): void {
+/**
+ * Traduce cualquier error a la respuesta JSON que el web ya sabe consumir.
+ * D1 reporta las violaciones de restricciones con codigos distintos a los de
+ * SQLite local, asi que se reconocen las dos formas.
+ */
+export function errorResponse(err: unknown): Response {
   if (err instanceof HttpError) {
-    res.status(err.status).json({
+    return json(err.status, {
       error: { code: err.code ?? 'error', message: err.message, details: err.details },
     })
-    return
   }
 
-  const e = err as { code?: string; message?: string }
-  if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
-    res.status(409).json({
+  const message = err instanceof Error ? err.message : String(err)
+
+  if (/UNIQUE constraint failed/i.test(message) || /SQLITE_CONSTRAINT_UNIQUE/.test(message)) {
+    return json(409, {
       error: { code: 'conflict', message: 'Ya existe un registro con esos datos' },
     })
-    return
   }
-  if (e?.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
-    res.status(409).json({
+  if (
+    /FOREIGN KEY constraint failed/i.test(message) ||
+    /SQLITE_CONSTRAINT_FOREIGNKEY/.test(message)
+  ) {
+    return json(409, {
       error: { code: 'conflict', message: 'Referencia inválida a otro registro' },
     })
-    return
   }
 
   console.error('[pits] error no controlado:', err)
-  res.status(500).json({
-    error: { code: 'internal_error', message: 'Error interno del servidor' },
-  })
+  return json(500, { error: { code: 'internal_error', message: 'Error interno del servidor' } })
 }
 
-export function notFoundHandler(_req: Request, res: Response): void {
-  res.status(404).json({ error: { code: 'not_found', message: 'Ruta no encontrada' } })
+export function json(status: number, payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  })
 }

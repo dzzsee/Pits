@@ -1,7 +1,6 @@
-import { Router } from 'express'
 import { z } from 'zod'
-import { ah, validate } from '../../shared/http.js'
-import { authenticate, currentUser } from '../../middleware/auth.js'
+import { validate } from '../../shared/http.js'
+import { authenticate, currentUser, type RouteContext } from '../../http/router.js'
 import {
   authenticate as loginUser,
   findById,
@@ -11,9 +10,11 @@ import {
   toPublicUser,
   verifyToken,
 } from './service.js'
+import { verifyPassword, hashPassword } from '../../lib/password.js'
 import { badRequest } from '../../shared/errors.js'
+import { Router } from '../../http/router.js'
 
-const router = Router()
+export const authRouter = new Router()
 
 const registerSchema = z.object({
   email: z.string().email('Correo invalido'),
@@ -27,96 +28,76 @@ const loginSchema = z.object({
   password: z.string().min(1),
 })
 
-router.post(
-  '/register',
-  ah(async (req, res) => {
-    const body = validate(registerSchema, req.body)
-    const user = await register(req.db!, body)
-    res.status(201).json({
+authRouter.post('/register', async (c) => {
+  const body = validate(registerSchema, c.body)
+  const user = await register(c.db, body)
+  c.json(
+    {
       user: toPublicUser(user),
-      accessToken: signAccess(user),
-      refreshToken: signRefresh(user),
-    })
-  }),
-)
+      accessToken: await signAccess(user),
+      refreshToken: await signRefresh(user),
+    },
+    201,
+  )
+})
 
-router.post(
-  '/login',
-  ah(async (req, res) => {
-    const body = validate(loginSchema, req.body)
-    const user = await loginUser(req.db!, body.email, body.password)
-    res.json({
-      user: toPublicUser(user),
-      accessToken: signAccess(user),
-      refreshToken: signRefresh(user),
-    })
-  }),
-)
+authRouter.post('/login', async (c) => {
+  const body = validate(loginSchema, c.body)
+  const user = await loginUser(c.db, body.email, body.password)
+  c.json({
+    user: toPublicUser(user),
+    accessToken: await signAccess(user),
+    refreshToken: await signRefresh(user),
+  })
+})
 
-router.post(
-  '/refresh',
-  ah(async (req, res) => {
-    const { refreshToken } = validate(z.object({ refreshToken: z.string().min(10) }), req.body)
-    const payload = verifyToken(refreshToken, 'refresh')
-    const user = findById(req.db!, payload.sub)
-    res.json({
-      user: toPublicUser(user),
-      accessToken: signAccess(user),
-      refreshToken: signRefresh(user),
-    })
-  }),
-)
+authRouter.post('/refresh', async (c) => {
+  const { refreshToken } = validate(z.object({ refreshToken: z.string().min(10) }), c.body)
+  const payload = await verifyToken(refreshToken, 'refresh')
+  const user = await findById(c.db, payload.sub)
+  c.json({
+    user: toPublicUser(user),
+    accessToken: await signAccess(user),
+    refreshToken: await signRefresh(user),
+  })
+})
 
-router.get(
-  '/me',
-  authenticate,
-  ah(async (req, res) => {
-    res.json({ user: currentUser(req) })
-  }),
-)
+authRouter.get('/me', authenticate, (c: RouteContext) => {
+  c.json({ user: currentUser(c) })
+})
 
 const profileSchema = z.object({
   name: z.string().min(2).optional(),
   phone: z.string().min(6).max(24).nullable().optional(),
 })
 
-router.patch(
-  '/me',
-  authenticate,
-  ah(async (req, res) => {
-    const body = validate(profileSchema, req.body)
-    const user = req.user!
+authRouter.patch('/me', authenticate, async (c) => {
+  const body = validate(profileSchema, c.body)
+  const user = c.user!
 
-    if (body.name !== undefined || body.phone !== undefined) {
-      req.db!
-        .prepare("UPDATE users SET name = COALESCE(?, name), phone = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(body.name ?? null, body.phone === undefined ? user.phone : body.phone, user.id)
-    }
-    res.json({ user: toPublicUser(findById(req.db!, user.id)) })
-  }),
-)
+  if (body.name !== undefined || body.phone !== undefined) {
+    await c.db
+      .prepare(
+        "UPDATE users SET name = COALESCE(?, name), phone = ?, updated_at = datetime('now') WHERE id = ?",
+      )
+      .run(body.name ?? null, body.phone === undefined ? user.phone : body.phone, user.id)
+  }
+  c.json({ user: toPublicUser(await findById(c.db, user.id)) })
+})
 
 const passwordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8, 'La contrasena debe tener al menos 8 caracteres'),
 })
 
-router.post(
-  '/me/password',
-  authenticate,
-  ah(async (req, res) => {
-    const body = validate(passwordSchema, req.body)
-    const { verifyPassword, hashPassword } = await import('./service.js')
-    const user = req.user!
-    if (!(await verifyPassword(user.password_hash, body.currentPassword))) {
-      throw badRequest('La contrasena actual no coincide')
-    }
-    req.db!.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(
-      await hashPassword(body.newPassword),
-      user.id,
-    )
-    res.json({ ok: true })
-  }),
-)
-
-export default router
+authRouter.post('/me/password', authenticate, async (c) => {
+  const body = validate(passwordSchema, c.body)
+  const user = c.user!
+  if (!(await verifyPassword(user.password_hash, body.currentPassword))) {
+    throw badRequest('La contrasena actual no coincide')
+  }
+  await c.db
+    .prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(await hashPassword(body.newPassword), user.id)
+  c.json({ ok: true })
+})

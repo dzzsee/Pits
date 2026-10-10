@@ -17,8 +17,8 @@ export default defineConfig({
         short_name: 'Pits',
         description: 'Estado de tu reparacion y fidelizacion del taller',
         lang: 'es',
-        theme_color: '#0b0b0f',
-        background_color: '#ffffff',
+        theme_color: '#0a0a0a',
+        background_color: '#0a0a0a',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
@@ -35,7 +35,11 @@ export default defineConfig({
         ],
       },
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Sin `html`: el index no se precachea a proposito. Precachearlo
+        // ata la app al HTML del despliegue anterior hasta que el service
+        // worker se actualiza, asi que un F5 seguiria mostrando la version
+        // anterior. Las navegaciones las resuelve `NetworkFirst` en `sw.ts`.
+        globPatterns: ['**/*.{js,css,svg,png,woff2}'],
       },
       devOptions: { enabled: false },
     }),
@@ -57,5 +61,14 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+  },
+  define: {
+    // Marca de build, para saber desde la consola que bundle esta cargado.
+    'import.meta.env.VITE_BUILD': JSON.stringify(
+      process.env.PITS_BUILD ??
+        // Sin variable de entorno: el hash lo genera el propio nombre del
+        // fichero, asi que basta con la fecha del build.
+        new Date().toISOString().slice(0, 16).replace('T', ' '),
+    ),
   },
 })

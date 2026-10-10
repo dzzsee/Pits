@@ -149,7 +149,10 @@ describe('ItemsPanel', () => {
     await waitFor(() => expect(screen.getByText('Pastillas delanteras')).toBeInTheDocument())
     expect(screen.queryByText('Mano de obra - rectificado')).not.toBeInTheDocument()
 
-    await user.type(screen.getByPlaceholderText('Pastillas delanteras'), 'Mano de obra - rectificado')
+    await user.type(
+      screen.getByPlaceholderText('Pastillas delanteras'),
+      'Mano de obra - rectificado',
+    )
     await user.type(screen.getByLabelText('Precio unitario'), '120')
     await user.click(screen.getByRole('button', { name: /agregar trabajo/i }))
 

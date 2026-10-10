@@ -3,8 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { formatDate, formatMoney, formatDateTime } from '@/lib/format'
 import { stateColor, cx } from '@/shared/colors'
-import { Badge, Card, SectionHeader, Skeleton } from '@/components/ui'
+import { BackLink, Badge, Card, DataRow, Skeleton, StateChip } from '@/components/ui'
 import { Timeline } from '@/components/Timeline'
+import { IconAlert, IconInvoice } from '@/components/icons'
 import type { OrderDetail } from '@/lib/types'
 import { keys } from '@/lib/query-keys'
 
@@ -24,8 +25,8 @@ export function RepairDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-40" />
+      <div className="space-y-6">
+        <Skeleton className="h-9 w-40" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -34,52 +35,53 @@ export function RepairDetailPage() {
 
   if (isError || !data) {
     return (
-      <Card>
-        <p className="text-sm text-ink-muted">No encontramos esa reparacion.</p>
-        <Link to="/reparaciones" className="mt-3 inline-block text-sm font-medium underline underline-offset-4">
-          Volver al historial
-        </Link>
+      <Card className="p-0">
+        <div className="flex flex-col items-center px-6 py-14 text-center">
+          <IconAlert className="mb-5 h-14 w-14 text-danger" />
+          <p className="font-display text-xl uppercase tracking-[0.02em]">
+            No encontramos esa reparacion
+          </p>
+          <p className="mt-2 max-w-sm text-sm text-ink-muted">
+            Puede que el taller todavia no la haya abierto, o que el enlace no sea el correcto.
+          </p>
+          <Link to="/reparaciones" className="btn btn-secondary btn-md mt-6">
+            Volver al historial
+          </Link>
+        </div>
       </Card>
     )
   }
 
   const { order, vehicle, items, events, invoice } = data
   const color = stateColor(order.state_color)
+  const billable = items.filter((i) => i.status !== 'cancelled')
 
   return (
-    <div className="animate-fade-in">
-      <Link
-        to="/reparaciones"
-        className="mb-4 inline-flex items-center gap-1 text-[13px] font-medium text-ink-muted hover:text-ink"
-      >
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-          <path d="m15 6-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        Reparaciones
-      </Link>
+    <div className="enter">
+      <BackLink to="/reparaciones">Reparaciones</BackLink>
 
       <Card className="relative overflow-hidden">
-        <div className={cx('absolute inset-x-0 top-0 h-1', color.bar)} aria-hidden="true" />
-        <div className="flex flex-wrap items-start justify-between gap-3 pt-1">
-          <div>
-            <p className="font-mono text-[12px] text-ink-subtle">{order.code}</p>
-            <h1 className="mt-1 text-xl font-semibold tracking-tight">{vehicle.plate}</h1>
-            <p className="text-sm text-ink-muted">
+        <span className={cx('absolute inset-x-0 top-0 h-[3px]', color.bar)} aria-hidden="true" />
+
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] tracking-[0.06em] text-ink-muted">{order.code}</p>
+            {/* La placa en mono: se lee como lo que es, un identificador. */}
+            <p className="mt-2 font-mono text-2xl font-semibold tracking-[0.1em]">
+              {vehicle.plate}
+            </p>
+            <p className="mt-1.5 text-sm text-ink-muted">
               {vehicle.brand} {vehicle.model}
               {vehicle.year ? ` · ${vehicle.year}` : ''}
             </p>
           </div>
-          <div className="text-right">
-            <span
-              className={cx(
-                'inline-flex items-center gap-2 rounded-full px-3 py-1 text-[13px] font-medium',
-                color.chip,
-              )}
-            >
+
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <StateChip className={color.chip}>
               <span className={cx('h-1.5 w-1.5 rounded-full', color.dot)} />
               {order.state_label ?? 'Sin estado'}
-            </span>
-            <p className="mt-1.5 text-[12px] text-ink-subtle">
+            </StateChip>
+            <p className="font-mono text-[11px] text-ink-muted">
               {order.status === 'delivered'
                 ? `Entregado el ${formatDate(order.delivered_at)}`
                 : `Actualizado ${formatDateTime(order.state_changed_at)}`}
@@ -88,66 +90,76 @@ export function RepairDetailPage() {
         </div>
 
         {order.client_note ? (
-          <p className="mt-4 rounded-xl bg-surface-sunken px-3.5 py-2.5 text-[13px] leading-relaxed text-ink-muted">
-            <span className="font-medium text-ink">Tu solicitud: </span>
+          <p className="mt-5 rounded border border-line bg-surface-hover px-3.5 py-3 text-[13px] leading-relaxed text-ink-muted">
+            <span className="eyebrow mr-2">Tu solicitud</span>
             {order.client_note}
           </p>
         ) : null}
       </Card>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+      <div className="mt-10 grid gap-8 lg:grid-cols-5">
         <div className="lg:col-span-3">
-          <SectionHeader title="Estado de la reparacion" />
+          <div className="rule mb-4">
+            <span className="eyebrow">Estado de la reparacion</span>
+          </div>
           <Card>
             <Timeline events={events} />
           </Card>
         </div>
 
-        <div className="space-y-6 lg:col-span-2">
+        <div className="space-y-8 lg:col-span-2">
           <div>
-            <SectionHeader title="Trabajos" />
+            <div className="rule mb-4">
+              <span className="eyebrow">Trabajos</span>
+              <span className="font-mono text-[11px] tabular-nums text-ink-muted">
+                {billable.length}
+              </span>
+            </div>
             <Card className="p-0">
-              {items.length ? (
+              {billable.length ? (
                 <ul className="divide-y divide-line">
-                  {items
-                    .filter((i) => i.status !== 'cancelled')
-                    .map((item) => (
-                      <li key={item.id} className="flex items-start justify-between gap-3 px-4 py-3">
-                        <div className="min-w-0">
-                          <p className="text-[14px] leading-snug">{item.description}</p>
-                          <p className="mt-0.5 text-[12px] text-ink-subtle">
-                            {KIND_LABEL[item.kind] ?? item.kind}
-                            {item.qty > 1 ? ` · x${item.qty}` : ''}
-                          </p>
-                        </div>
-                        <p className="shrink-0 text-[14px] font-medium tabular-nums">
-                          {formatMoney(Math.round(item.qty * item.unit_price_cents), order.currency)}
+                  {billable.map((item) => (
+                    <li key={item.id} className="flex items-start justify-between gap-3 px-5 py-4">
+                      <div className="min-w-0">
+                        <p className="text-sm leading-snug">{item.description}</p>
+                        <p className="eyebrow mt-1.5">
+                          {KIND_LABEL[item.kind] ?? item.kind}
+                          {item.qty > 1 ? ` · x${item.qty}` : ''}
                         </p>
-                      </li>
-                    ))}
-                  <li className="flex items-center justify-between px-4 py-3">
-                    <p className="text-[14px] font-semibold">Total</p>
-                    <p className="text-[15px] font-semibold tabular-nums">
+                      </div>
+                      <p className="shrink-0 text-sm font-medium tabular-nums">
+                        {formatMoney(Math.round(item.qty * item.unit_price_cents), order.currency)}
+                      </p>
+                    </li>
+                  ))}
+                  <li className="flex items-center justify-between px-5 py-4">
+                    <p className="eyebrow">Total</p>
+                    <p className="font-display text-xl leading-none tabular-nums">
                       {formatMoney(order.total_cents, order.currency)}
                     </p>
                   </li>
                 </ul>
               ) : (
-                <p className="px-4 py-8 text-center text-sm text-ink-subtle">
-                  El taller aun no detailo los trabajos.
+                <p className="px-6 py-10 text-center text-sm text-ink-muted">
+                  El taller aun no detallo los trabajos.
                 </p>
               )}
             </Card>
 
             {invoice ? (
-              <div className="mt-3 flex items-center justify-between rounded-xl border border-line bg-surface-raised px-4 py-3">
-                <div>
-                  <p className="font-mono text-[13px]">{invoice.number}</p>
-                  <p className="text-[12px] text-ink-subtle">
-                    Factura {invoice.status === 'paid' ? 'pagada' : 'emitida'}
-                  </p>
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-accent/30 bg-accent/[0.05] px-4 py-3.5">
+                <div className="flex items-center gap-3">
+                  <IconInvoice className="h-5 w-5 shrink-0 text-accent" />
+                  <div>
+                    <p className="font-mono text-[13px] font-semibold tracking-[0.06em]">
+                      {invoice.number}
+                    </p>
+                    <p className="eyebrow mt-1">
+                      Factura {invoice.status === 'paid' ? 'pagada' : 'emitida'}
+                    </p>
+                  </div>
                 </div>
-                <Badge tone={invoice.status === 'paid' ? 'success' : 'warning'}>
+                <Badge tone={invoice.status === 'paid' ? 'success' : 'accent'}>
                   {invoice.status === 'paid' ? 'Pagada' : 'Pendiente'}
                 </Badge>
               </div>
@@ -155,33 +167,28 @@ export function RepairDetailPage() {
           </div>
 
           <div>
-            <SectionHeader title="Vehiculo" />
+            <div className="rule mb-4">
+              <span className="eyebrow">Vehiculo</span>
+            </div>
             <Card>
-              <dl className="space-y-3 text-sm">
-                <Row label="Placa" value={vehicle.plate} />
-                <Row label="Marca" value={`${vehicle.brand} ${vehicle.model}`} />
-                {vehicle.year ? <Row label="Anio" value={String(vehicle.year)} /> : null}
+              <dl className="divide-y divide-line">
+                <DataRow label="Placa" value={<span className="font-mono">{vehicle.plate}</span>} />
+                <DataRow label="Marca" value={`${vehicle.brand} ${vehicle.model}`} />
+                {vehicle.year ? <DataRow label="Anio" value={String(vehicle.year)} /> : null}
                 {order.mileage || vehicle.mileage ? (
-                  <Row
+                  <DataRow
                     label="Kilometraje"
                     value={`${(order.mileage ?? vehicle.mileage ?? 0).toLocaleString('es-DO')} km`}
                   />
                 ) : null}
-                {vehicle.vin ? <Row label="VIN" value={vehicle.vin} /> : null}
+                {vehicle.vin ? (
+                  <DataRow label="VIN" value={<span className="font-mono text-xs">{vehicle.vin}</span>} />
+                ) : null}
               </dl>
             </Card>
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-ink-subtle">{label}</dt>
-      <dd className="text-right font-medium">{value}</dd>
     </div>
   )
 }

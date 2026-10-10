@@ -46,9 +46,7 @@ describe('Timeline', () => {
 
   it('destaca los contratiempos', () => {
     render(
-      <Timeline
-        events={[event({ state_label_snapshot: 'Esperando repuesto', is_incident: 1 })]}
-      />,
+      <Timeline events={[event({ state_label_snapshot: 'Esperando repuesto', is_incident: 1 })]} />,
     )
 
     expect(screen.getByText('Contratiempo')).toBeInTheDocument()

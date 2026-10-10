@@ -40,17 +40,18 @@ function literal(value: unknown): string {
   return `'${String(value).replace(/'/g, "''")}'`
 }
 
-export function dumpDatabase(db: Db, options: DumpOptions = {}): string {
+export async function dumpDatabase(db: Db, options: DumpOptions = {}): Promise<string> {
   const exclude = new Set(options.exclude ?? [])
 
-  const master = db
-    .prepare<[], MasterRow>(
-      `SELECT type, name, tbl_name, sql FROM sqlite_master
+  const master = (
+    await db
+      .prepare<[], MasterRow>(
+        `SELECT type, name, tbl_name, sql FROM sqlite_master
        WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
        ORDER BY rowid`,
-    )
-    .all()
-    .filter((row) => !exclude.has(row.name))
+      )
+      .all()
+  ).filter((row) => !exclude.has(row.name))
 
   const lines: string[] = [
     '-- Pits: volcado de la base de datos (esquema + datos).',
@@ -73,10 +74,10 @@ export function dumpDatabase(db: Db, options: DumpOptions = {}): string {
 
     if (row.type !== 'table') continue
 
-    const columns = tableColumns(db, row.name)
+    const columns = await tableColumns(db, row.name)
     if (!columns.length) continue
 
-    const rows = db
+    const rows = await db
       .prepare<[], Record<string, unknown>>(
         `SELECT ${columns.map((c) => `"${c}"`).join(', ')} FROM "${row.name}"`,
       )
@@ -95,12 +96,12 @@ export function dumpDatabase(db: Db, options: DumpOptions = {}): string {
     lines.push(`${row.sql};`)
   }
 
-  const sequence = db.prepare<[], Record<string, unknown>>('SELECT * FROM sqlite_sequence').all()
+  const sequence = await db
+    .prepare<[], Record<string, unknown>>('SELECT * FROM sqlite_sequence')
+    .all()
   if (sequence.length) {
     for (const row of sequence) {
-      lines.push(
-        `INSERT INTO sqlite_sequence VALUES(${literal(row.name)},${literal(row.seq)});`,
-      )
+      lines.push(`INSERT INTO sqlite_sequence VALUES(${literal(row.name)},${literal(row.seq)});`)
     }
   }
 
@@ -109,8 +110,8 @@ export function dumpDatabase(db: Db, options: DumpOptions = {}): string {
 }
 
 /** Nombres de columna en el orden real de la tabla, sin comillas. */
-function tableColumns(db: Db, table: string): string[] {
-  const rows = db
+async function tableColumns(db: Db, table: string): Promise<string[]> {
+  const rows = await db
     .prepare<[string], { name: string }>('SELECT name FROM pragma_table_info(?)')
     .all(table)
   return rows.map((r) => r.name)

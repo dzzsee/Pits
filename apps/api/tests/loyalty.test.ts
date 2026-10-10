@@ -17,53 +17,53 @@ describe('fidelizacion', () => {
   let db: Db
 
   beforeEach(async () => {
-    db = freshDb()
+    db = await freshDb()
     await seedUsers(db)
   })
 
-  it('usa la regla por defecto: 5 puntos por reparacion, 25 por recompensa', () => {
-    const cfg = readLoyaltyConfig(db)
+  it('usa la regla por defecto: 5 puntos por reparacion, 25 por recompensa', async () => {
+    const cfg = await readLoyaltyConfig(db)
     expect(cfg.pointsPerRepair).toBe(5)
     expect(cfg.pointsPerReward).toBe(25)
     expect(cfg.rewardLabel).toBe('Lavado gratis')
   })
 
-  it('acumula 5 puntos por cada reparacion entregada', () => {
-    awardForRepair(db, CLIENT.id, null)
-    awardForRepair(db, CLIENT.id, null)
-    awardForRepair(db, CLIENT.id, null)
+  it('acumula 5 puntos por cada reparacion entregada', async () => {
+    await awardForRepair(db, CLIENT.id, null)
+    await awardForRepair(db, CLIENT.id, null)
+    await awardForRepair(db, CLIENT.id, null)
 
-    expect(ensureAccount(db, CLIENT.id).points_balance).toBe(15)
-    expect(ensureAccount(db, CLIENT.id).lifetime_points).toBe(15)
+    expect((await ensureAccount(db, CLIENT.id)).points_balance).toBe(15)
+    expect((await ensureAccount(db, CLIENT.id)).lifetime_points).toBe(15)
   })
 
-  it('otorga el lavado al cruzar el umbral de 25 puntos', () => {
-    for (let i = 0; i < 5; i++) awardForRepair(db, CLIENT.id, null)
+  it('otorga el lavado al cruzar el umbral de 25 puntos', async () => {
+    for (let i = 0; i < 5; i++) await awardForRepair(db, CLIENT.id, null)
 
-    const account = ensureAccount(db, CLIENT.id)
+    const account = await ensureAccount(db, CLIENT.id)
     expect(account.points_balance).toBe(0)
     expect(account.rewards_available).toBe(1)
 
-    const rewards = listRedemptions(db, CLIENT.id)
+    const rewards = await listRedemptions(db, CLIENT.id)
     expect(rewards).toHaveLength(1)
     expect(rewards[0]?.label).toBe('Lavado gratis')
     expect(rewards[0]?.status).toBe('available')
     expect(rewards[0]?.code).toMatch(/^PITS-[A-Z2-9]{4}-[A-Z2-9]{4}$/)
   })
 
-  it('convierte el saldo sobrante en recompensas completas', () => {
+  it('convierte el saldo sobrante en recompensas completas', async () => {
     // 7 reparaciones = 35 puntos: 1 lavado y sobran 10.
-    for (let i = 0; i < 7; i++) awardForRepair(db, CLIENT.id, null)
+    for (let i = 0; i < 7; i++) await awardForRepair(db, CLIENT.id, null)
 
-    const account = ensureAccount(db, CLIENT.id)
+    const account = await ensureAccount(db, CLIENT.id)
     expect(account.points_balance).toBe(10)
     expect(account.rewards_available).toBe(1)
   })
 
-  it('registra cada movimiento en el ledger sin editar saldos a mano', () => {
-    for (let i = 0; i < 5; i++) awardForRepair(db, CLIENT.id, null)
+  it('registra cada movimiento en el ledger sin editar saldos a mano', async () => {
+    for (let i = 0; i < 5; i++) await awardForRepair(db, CLIENT.id, null)
 
-    const ledger = listLedger(db, CLIENT.id)
+    const ledger = await listLedger(db, CLIENT.id)
     const repairs = ledger.filter((e) => e.reason === 'repair')
     const granted = ledger.filter((e) => e.reason === 'reward_granted')
 
@@ -73,68 +73,70 @@ describe('fidelizacion', () => {
     expect(granted[0]?.delta).toBe(-25)
   })
 
-  it('el saldo nunca queda negativo al otorgar varias recompensas', () => {
+  it('el saldo nunca queda negativo al otorgar varias recompensas', async () => {
     // 60 puntos forzados deben producir 2 lavados y dejar 10.
-    db.prepare(
-      "UPDATE loyalty_accounts SET points_balance = 60, lifetime_points = 60 WHERE client_id = ?",
-    ).run(CLIENT.id)
+    await db
+      .prepare(
+        'UPDATE loyalty_accounts SET points_balance = 60, lifetime_points = 60 WHERE client_id = ?',
+      )
+      .run(CLIENT.id)
 
-    grantReward(db, CLIENT.id)
-    grantReward(db, CLIENT.id)
+    await grantReward(db, CLIENT.id)
+    await grantReward(db, CLIENT.id)
 
-    const account = ensureAccount(db, CLIENT.id)
+    const account = await ensureAccount(db, CLIENT.id)
     expect(account.points_balance).toBe(10)
     expect(account.rewards_available).toBe(2)
   })
 
-  it('no otorga recompensa si el saldo no alcanza', () => {
-    expect(grantReward(db, CLIENT.id)).toBeNull()
+  it('no otorga recompensa si el saldo no alcanza', async () => {
+    expect(await grantReward(db, CLIENT.id)).toBeNull()
   })
 
-  it('el canje del cliente consume la recompensa disponible', () => {
-    for (let i = 0; i < 5; i++) awardForRepair(db, CLIENT.id, null)
-    const reward = listRedemptions(db, CLIENT.id)[0]!
+  it('el canje del cliente consume la recompensa disponible', async () => {
+    for (let i = 0; i < 5; i++) await awardForRepair(db, CLIENT.id, null)
+    const reward = (await listRedemptions(db, CLIENT.id))[0]!
 
-    const redeemed = redeemReward(db, CLIENT.id, reward.id)
+    const redeemed = await redeemReward(db, CLIENT.id, reward.id)
 
     expect(redeemed.status).toBe('used')
     expect(redeemed.redeemed_at).not.toBeNull()
-    expect(ensureAccount(db, CLIENT.id).rewards_available).toBe(0)
-    expect(ensureAccount(db, CLIENT.id).rewards_redeemed).toBe(1)
+    expect((await ensureAccount(db, CLIENT.id)).rewards_available).toBe(0)
+    expect((await ensureAccount(db, CLIENT.id)).rewards_redeemed).toBe(1)
   })
 
-  it('no deja canjar dos veces la misma recompensa', () => {
-    for (let i = 0; i < 5; i++) awardForRepair(db, CLIENT.id, null)
-    const reward = listRedemptions(db, CLIENT.id)[0]!
+  it('no deja canjar dos veces la misma recompensa', async () => {
+    for (let i = 0; i < 5; i++) await awardForRepair(db, CLIENT.id, null)
+    const reward = (await listRedemptions(db, CLIENT.id))[0]!
 
-    redeemReward(db, CLIENT.id, reward.id)
-    expect(() => redeemReward(db, CLIENT.id, reward.id)).toThrow(/disponible/i)
+    await redeemReward(db, CLIENT.id, reward.id)
+    await expect(redeemReward(db, CLIENT.id, reward.id)).rejects.toThrow(/disponible/i)
   })
 
-  it('el progreso indica cuantas faltan', () => {
-    awardForRepair(db, CLIENT.id, null)
-    awardForRepair(db, CLIENT.id, null)
+  it('el progreso indica cuantas faltan', async () => {
+    await awardForRepair(db, CLIENT.id, null)
+    await awardForRepair(db, CLIENT.id, null)
 
-    const cfg = readLoyaltyConfig(db)
-    const progress = progressToNextReward(ensureAccount(db, CLIENT.id), cfg)
+    const cfg = await readLoyaltyConfig(db)
+    const progress = progressToNextReward(await ensureAccount(db, CLIENT.id), cfg)
 
     expect(progress.remaining).toBe(15)
     expect(progress.repairsUntilReward).toBe(3)
     expect(progress.percent).toBe(40)
   })
 
-  it('respeta reglas cambiadas por el administrador', () => {
-    setSetting(db, 'points_per_repair', '10')
-    setSetting(db, 'points_per_reward', '30')
-    setSetting(db, 'reward_label', 'Cambio de aceite')
+  it('respeta reglas cambiadas por el administrador', async () => {
+    await setSetting(db, 'points_per_repair', '10')
+    await setSetting(db, 'points_per_reward', '30')
+    await setSetting(db, 'reward_label', 'Cambio de aceite')
 
-    awardForRepair(db, CLIENT.id, null)
-    expect(ensureAccount(db, CLIENT.id).points_balance).toBe(10)
+    await awardForRepair(db, CLIENT.id, null)
+    expect((await ensureAccount(db, CLIENT.id)).points_balance).toBe(10)
 
-    awardForRepair(db, CLIENT.id, null)
-    awardForRepair(db, CLIENT.id, null)
+    await awardForRepair(db, CLIENT.id, null)
+    await awardForRepair(db, CLIENT.id, null)
 
-    const rewards = listRedemptions(db, CLIENT.id)
+    const rewards = await listRedemptions(db, CLIENT.id)
     expect(rewards).toHaveLength(1)
     expect(rewards[0]?.label).toBe('Cambio de aceite')
   })

@@ -27,12 +27,12 @@ CREATE TABLE users (
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
-INSERT INTO "users" VALUES(1,'admin','admin@pits.local',NULL,'Administrador Pits','$argon2id$v=19$m=65536,t=3,p=4$rMUqXY1RZq37nsjm+/Zl/Q$BsVtZUOHlOK5QpzJvTp+60Xc54cH1aWW6Cer+nLGmPo',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
-INSERT INTO "users" VALUES(2,'mechanic','mecanico@pits.local',NULL,'Javier Santos','$argon2id$v=19$m=65536,t=3,p=4$RXq/IRu8P7jKjsRHyqTKHw$Wy2mpbc64+Ifgw5gcJshsAF/UQVOT98Et7MVgaOovdI',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
-INSERT INTO "users" VALUES(3,'mechanic','mecanico2@pits.local',NULL,'Rosa Diaz','$argon2id$v=19$m=65536,t=3,p=4$RXq/IRu8P7jKjsRHyqTKHw$Wy2mpbc64+Ifgw5gcJshsAF/UQVOT98Et7MVgaOovdI',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
-INSERT INTO "users" VALUES(4,'client','ana@demo.local','+1 809 555 0101','Ana Rivera','$argon2id$v=19$m=65536,t=3,p=4$RXq/IRu8P7jKjsRHyqTKHw$Wy2mpbc64+Ifgw5gcJshsAF/UQVOT98Et7MVgaOovdI',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
-INSERT INTO "users" VALUES(5,'client','carlos@demo.local','+1 809 555 0202','Carlos Medina','$argon2id$v=19$m=65536,t=3,p=4$RXq/IRu8P7jKjsRHyqTKHw$Wy2mpbc64+Ifgw5gcJshsAF/UQVOT98Et7MVgaOovdI',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
-INSERT INTO "users" VALUES(6,'client','luis@demo.local','+1 809 555 0303','Luis Fernandez','$argon2id$v=19$m=65536,t=3,p=4$RXq/IRu8P7jKjsRHyqTKHw$Wy2mpbc64+Ifgw5gcJshsAF/UQVOT98Et7MVgaOovdI',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
+INSERT INTO "users" VALUES(1,'admin','admin@pits.local',NULL,'Administrador Pits','$pbkdf2-sha256$100000$LK3w6bUY9hFxcWN2uR1-1A$CNLTsundh8UDRB_PFwkfaxnVAciYp9YvhFhJkmJ_Omk',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
+INSERT INTO "users" VALUES(2,'mechanic','mecanico@pits.local',NULL,'Javier Santos','$pbkdf2-sha256$100000$1EbETUIiaREIwSfEVXCuig$wRYEBsmxrPPEtwqHpsFzfCjva_bz38ChcONrSYMCJWY',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
+INSERT INTO "users" VALUES(3,'mechanic','mecanico2@pits.local',NULL,'Rosa Diaz','$pbkdf2-sha256$100000$V6OdTyprgjAkSxvOqZJXBA$mbyYRxZ2lrcbAYJimaTDbUR80Xwyj4LN5CQ6MM50CwQ',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
+INSERT INTO "users" VALUES(4,'client','ana@demo.local','+1 809 555 0101','Ana Rivera','$pbkdf2-sha256$100000$tHHYsZFi56yQ_rdhIPoOwQ$CG8gNRd8ekhFS58Puc81ZYmQhoYOSWR2ec1Feyet4Do',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
+INSERT INTO "users" VALUES(5,'client','carlos@demo.local','+1 809 555 0202','Carlos Medina','$pbkdf2-sha256$100000$sJDqsDecCyjXNtCWF1qWNQ$2vjbqker9h_xoHzt5pcbH0D5mI0_5nOjegDmY5TJ0MA',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
+INSERT INTO "users" VALUES(6,'client','luis@demo.local','+1 809 555 0303','Luis Fernandez','$pbkdf2-sha256$100000$Rbh3UBBxvwgMltwmWfNd7Q$yDB-1QVosoYA4Vm-4qwAjYlMvK-CHaIim-P-n-cO-6I',1,'2026-10-09 23:04:23','2026-10-09 23:04:23');
 CREATE TABLE repair_states (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       key          TEXT NOT NULL UNIQUE,

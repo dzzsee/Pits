@@ -12,8 +12,8 @@ export interface LoyaltyConfig {
   rewardValidDays: number
 }
 
-export function readLoyaltyConfig(db: Db): LoyaltyConfig {
-  const rows = db
+export async function readLoyaltyConfig(db: Db): Promise<LoyaltyConfig> {
+  const rows = await db
     .prepare<[], { key: string; value: string }>('SELECT key, value FROM settings')
     .all()
   const map: Record<string, string> = {}
@@ -31,7 +31,10 @@ export function readLoyaltyConfig(db: Db): LoyaltyConfig {
   }
 }
 
-export function updateLoyaltyConfig(db: Db, patch: Partial<LoyaltyConfig>): LoyaltyConfig {
+export async function updateLoyaltyConfig(
+  db: Db,
+  patch: Partial<LoyaltyConfig>,
+): Promise<LoyaltyConfig> {
   const map: Record<string, string> = {
     pointsPerRepair: 'points_per_repair',
     pointsPerReward: 'points_per_reward',
@@ -41,14 +44,14 @@ export function updateLoyaltyConfig(db: Db, patch: Partial<LoyaltyConfig>): Loya
   for (const [k, v] of Object.entries(patch)) {
     const key = map[k]
     if (!key || v === undefined) continue
-    setSetting(db, key, String(v))
+    await setSetting(db, key, String(v))
   }
   return readLoyaltyConfig(db)
 }
 
-export function ensureAccount(db: Db, clientId: number): LoyaltyAccountRow {
-  db.prepare('INSERT OR IGNORE INTO loyalty_accounts (client_id) VALUES (?)').run(clientId)
-  const row = db
+export async function ensureAccount(db: Db, clientId: number): Promise<LoyaltyAccountRow> {
+  await db.prepare('INSERT OR IGNORE INTO loyalty_accounts (client_id) VALUES (?)').run(clientId)
+  const row = await db
     .prepare<[number], LoyaltyAccountRow>('SELECT * FROM loyalty_accounts WHERE client_id = ?')
     .get(clientId)
   if (!row) throw notFound('Cuenta de fidelizacion no encontrada')
@@ -62,10 +65,7 @@ export function progressToNextReward(account: LoyaltyAccountRow, cfg: LoyaltyCon
   return {
     remaining,
     percent: pct,
-    repairsUntilReward:
-      remaining === 0
-        ? 0
-        : Math.ceil(remaining / cfg.pointsPerRepair),
+    repairsUntilReward: remaining === 0 ? 0 : Math.ceil(remaining / cfg.pointsPerRepair),
   }
 }
 
@@ -74,44 +74,50 @@ export function progressToNextReward(account: LoyaltyAccountRow, cfg: LoyaltyCon
  * funcion que ejecuta el canje automatico; se expone aparte para poder
  * concederla desde el panel de administracion.
  */
-export function grantRewardTx(db: Db, clientId: number): RedemptionRow | null {
-  const cfg = readLoyaltyConfig(db)
-  const account = ensureAccount(db, clientId)
+export async function grantRewardTx(db: Db, clientId: number): Promise<RedemptionRow | null> {
+  const cfg = await readLoyaltyConfig(db)
+  const account = await ensureAccount(db, clientId)
   if (account.points_balance < cfg.pointsPerReward) return null
 
-  db.prepare(
-    `UPDATE loyalty_accounts
-     SET points_balance = points_balance - ?, updated_at = datetime('now')
-     WHERE client_id = ?`,
-  ).run(cfg.pointsPerReward, clientId)
+  await db
+    .prepare(
+      `UPDATE loyalty_accounts
+       SET points_balance = points_balance - ?, updated_at = datetime('now')
+       WHERE client_id = ?`,
+    )
+    .run(cfg.pointsPerReward, clientId)
 
-  const info = db
+  const info = await db
     .prepare(
       `INSERT INTO redemptions (client_id, label, code, status, expires_at)
        VALUES (?, ?, ?, 'available', datetime('now', ?))`,
     )
     .run(clientId, cfg.rewardLabel, nextRedemptionCode(), `+${cfg.rewardValidDays} days`)
 
-  const redemption = db
+  const redemption = (await db
     .prepare<[number], RedemptionRow>('SELECT * FROM redemptions WHERE id = ?')
-    .get(Number(info.lastInsertRowid))!
+    .get(Number(info.lastInsertRowid)))!
 
-  db.prepare(
-    `INSERT INTO ledger_entries (client_id, delta, reason, ref_redemption_id, note)
-     VALUES (?, ?, 'reward_granted', ?, ?)`,
-  ).run(clientId, -cfg.pointsPerReward, redemption.id, `Reward: ${cfg.rewardLabel}`)
+  await db
+    .prepare(
+      `INSERT INTO ledger_entries (client_id, delta, reason, ref_redemption_id, note)
+       VALUES (?, ?, 'reward_granted', ?, ?)`,
+    )
+    .run(clientId, -cfg.pointsPerReward, redemption.id, `Reward: ${cfg.rewardLabel}`)
 
-  db.prepare(
-    `UPDATE loyalty_accounts
-     SET rewards_available = rewards_available + 1, updated_at = datetime('now')
-     WHERE client_id = ?`,
-  ).run(clientId)
+  await db
+    .prepare(
+      `UPDATE loyalty_accounts
+       SET rewards_available = rewards_available + 1, updated_at = datetime('now')
+       WHERE client_id = ?`,
+    )
+    .run(clientId)
 
   return redemption
 }
 
-export function grantReward(db: Db, clientId: number): RedemptionRow | null {
-  return db.transaction(() => grantRewardTx(db, clientId))()
+export async function grantReward(db: Db, clientId: number): Promise<RedemptionRow | null> {
+  return db.transaction(() => grantRewardTx(db, clientId))
 }
 
 export interface AwardResult {
@@ -123,69 +129,75 @@ export interface AwardResult {
 /**
  * Suma los puntos de una reparacion entregada y, si el saldo cruza el
  * umbral, materializa la recompensa como canje disponible.
- * Todo en una transaccion: el ledger es la fuente de verdad.
  *
  * `orderId` es opcional para que los ajustes manuales (migraciones, historial
  * previo) puedan usar el mismo camino de awarding.
  */
-export function awardForRepair(
+export async function awardForRepair(
   db: Db,
   clientId: number,
   orderId: number | null,
   opts: { awardPoints?: boolean } = {},
-): AwardResult {
-  const cfg = readLoyaltyConfig(db)
+): Promise<AwardResult> {
+  const cfg = await readLoyaltyConfig(db)
   const awardPoints = opts.awardPoints ?? true
 
-  const tx = db.transaction((): AwardResult => {
-    ensureAccount(db, clientId)
+  const result = await db.transaction(async (): Promise<AwardResult> => {
+    await ensureAccount(db, clientId)
     const awarded = awardPoints ? cfg.pointsPerRepair : 0
 
     if (awarded > 0) {
-      db.prepare(
-        `UPDATE loyalty_accounts
-         SET points_balance = points_balance + ?,
-             lifetime_points = lifetime_points + ?,
-             updated_at = datetime('now')
-         WHERE client_id = ?`,
-      ).run(awarded, awarded, clientId)
-      db.prepare(
-        `INSERT INTO ledger_entries (client_id, delta, reason, ref_order_id, note)
-         VALUES (?, ?, 'repair', ?, ?)`,
-      ).run(clientId, awarded, orderId, `Reparacion entregada (+${awarded} pts)`)
+      await db
+        .prepare(
+          `UPDATE loyalty_accounts
+           SET points_balance = points_balance + ?,
+               lifetime_points = lifetime_points + ?,
+               updated_at = datetime('now')
+           WHERE client_id = ?`,
+        )
+        .run(awarded, awarded, clientId)
+      await db
+        .prepare(
+          `INSERT INTO ledger_entries (client_id, delta, reason, ref_order_id, note)
+           VALUES (?, ?, 'repair', ?, ?)`,
+        )
+        .run(clientId, awarded, orderId, `Reparacion entregada (+${awarded} pts)`)
     }
 
     const rewardsGranted: RedemptionRow[] = []
     let guard = 0
     for (;;) {
       if (guard++ > 100) break // salvaguarda: nunca entrar en bucle infinito
-      const reward = grantRewardTx(db, clientId)
+      const reward = await grantRewardTx(db, clientId)
       if (!reward) break
       rewardsGranted.push(reward)
     }
 
-    return { pointsAwarded: awarded, rewardsGranted, account: ensureAccount(db, clientId) }
+    return {
+      pointsAwarded: awarded,
+      rewardsGranted,
+      account: await ensureAccount(db, clientId),
+    }
   })
 
-  const result = tx()
-
-  // Notificaciones fuera de la transaccion: si fallan, los puntos ya están.
+  // Notificaciones fuera de la transaccion: si fallan, los puntos ya estan.
+  // Await porque en Workers lo suelto se cancela al cerrar la respuesta.
   if (result.pointsAwarded > 0) {
-    notifyUser(db, clientId, {
+    await notifyUser(db, clientId, {
       title: `+${result.pointsAwarded} puntos`,
       body: 'Tu reparacion fue entregada. Revisa tu saldo de fidelizacion.',
       kind: 'loyalty',
       orderId,
-    }).catch(() => undefined)
+    })
   }
   for (const r of result.rewardsGranted) {
-    notifyUser(db, clientId, {
+    await notifyUser(db, clientId, {
       title: `Ganaste: ${r.label}`,
       body: `Tu codigo de canje es ${r.code}`,
       kind: 'loyalty',
       orderId: null,
-    }).catch(() => undefined)
-    sendPushToUser(db, clientId, {
+    })
+    await sendPushToUser(db, clientId, {
       title: `Ganaste: ${r.label}`,
       body: `Codigo ${r.code}`,
       data: { url: '/fidelizacion' },
@@ -196,8 +208,12 @@ export function awardForRepair(
 }
 
 /** Canje manual: el cliente gasta una recompensa disponible. */
-export function redeemReward(db: Db, clientId: number, redemptionId: number): RedemptionRow {
-  const row = db
+export async function redeemReward(
+  db: Db,
+  clientId: number,
+  redemptionId: number,
+): Promise<RedemptionRow> {
+  const row = await db
     .prepare<[number, number], RedemptionRow>(
       'SELECT * FROM redemptions WHERE id = ? AND client_id = ?',
     )
@@ -205,37 +221,40 @@ export function redeemReward(db: Db, clientId: number, redemptionId: number): Re
   if (!row) throw notFound('Recompensa no encontrada')
   if (row.status !== 'available') throw conflict('Esta recompensa ya no esta disponible')
 
-  const cfg = readLoyaltyConfig(db)
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE redemptions SET status = 'used', redeemed_at = datetime('now') WHERE id = ?").run(
-      redemptionId,
-    )
-    db.prepare(
-      `UPDATE loyalty_accounts
-       SET rewards_available = MAX(0, rewards_available - 1),
-           rewards_redeemed = rewards_redeemed + 1,
-           updated_at = datetime('now')
-       WHERE client_id = ?`,
-    ).run(clientId)
-    db.prepare(
-      `INSERT INTO ledger_entries (client_id, delta, reason, ref_redemption_id, note)
-       VALUES (?, 0, 'redeem', ?, ?)`,
-    ).run(clientId, redemptionId, `Canje de ${row.label} (${row.code})`)
+  await db.transaction(async () => {
+    await db
+      .prepare("UPDATE redemptions SET status = 'used', redeemed_at = datetime('now') WHERE id = ?")
+      .run(redemptionId)
+    await db
+      .prepare(
+        `UPDATE loyalty_accounts
+         SET rewards_available = MAX(0, rewards_available - 1),
+             rewards_redeemed = rewards_redeemed + 1,
+             updated_at = datetime('now')
+         WHERE client_id = ?`,
+      )
+      .run(clientId)
+    await db
+      .prepare(
+        `INSERT INTO ledger_entries (client_id, delta, reason, ref_redemption_id, note)
+         VALUES (?, 0, 'redeem', ?, ?)`,
+      )
+      .run(clientId, redemptionId, `Canje de ${row.label} (${row.code})`)
   })
-  tx()
 
-  notifyUser(db, clientId, {
+  await notifyUser(db, clientId, {
     title: 'Recompensa canjeada',
     body: `${row.label} - muestra el codigo ${row.code} en recepcion.`,
     kind: 'loyalty',
     orderId: null,
-  }).catch(() => undefined)
+  })
 
-  void cfg
-  return db.prepare<[number], RedemptionRow>('SELECT * FROM redemptions WHERE id = ?').get(redemptionId)!
+  return (await db
+    .prepare<[number], RedemptionRow>('SELECT * FROM redemptions WHERE id = ?')
+    .get(redemptionId))!
 }
 
-export function listRedemptions(db: Db, clientId: number): RedemptionRow[] {
+export async function listRedemptions(db: Db, clientId: number): Promise<RedemptionRow[]> {
   return db
     .prepare<[number], RedemptionRow>(
       `SELECT * FROM redemptions WHERE client_id = ? ORDER BY
@@ -244,16 +263,19 @@ export function listRedemptions(db: Db, clientId: number): RedemptionRow[] {
     .all(clientId)
 }
 
-export function listLedger(db: Db, clientId: number, limit = 50) {
+export async function listLedger(db: Db, clientId: number, limit = 50) {
   return db
-    .prepare<[number, number], {
-      id: number
-      delta: number
-      reason: string
-      note: string | null
-      created_at: string
-      ref_order_id: number | null
-    }>(
+    .prepare<
+      [number, number],
+      {
+        id: number
+        delta: number
+        reason: string
+        note: string | null
+        created_at: string
+        ref_order_id: number | null
+      }
+    >(
       `SELECT id, delta, reason, note, created_at, ref_order_id
        FROM ledger_entries WHERE client_id = ? ORDER BY id DESC LIMIT ?`,
     )

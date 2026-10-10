@@ -5,11 +5,11 @@
  *   npm run db:reset -w @pits/api
  */
 import fs from 'node:fs'
-import { config } from '../src/config.js'
+import { databasePath } from '../src/db/connection.js'
 
 let removed = 0
 for (const suffix of ['', '-wal', '-shm']) {
-  const file = `${config.databasePath}${suffix}`
+  const file = `${databasePath()}${suffix}`
   if (fs.existsSync(file)) {
     fs.rmSync(file)
     console.log(`borrado ${file}`)

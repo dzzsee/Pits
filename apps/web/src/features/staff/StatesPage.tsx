@@ -1,12 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, ApiError } from '@/lib/api'
-import { cx, stateColor, stateColorClasses } from '@/shared/colors'
-import { Alert, Badge, Button, Card, Field, Input, SectionHeader, Skeleton } from '@/components/ui'
+import { cx, stateColor, stateColorClasses, statePalette } from '@/shared/colors'
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Field,
+  Input,
+  PageHeader,
+  Skeleton,
+} from '@/components/ui'
+import { IconCheck, IconEdit } from '@/components/icons'
 import type { RepairState, RepairStatePatch, StateColor } from '@/lib/types'
 import { keys } from '@/lib/query-keys'
-
-const PALETTE = Object.keys(stateColorClasses)
 
 export function StatesPage() {
   const queryClient = useQueryClient()
@@ -37,20 +45,29 @@ export function StatesPage() {
     onSuccess: invalidate,
   })
 
-  return (
-    <div className="animate-fade-in">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Estados</h1>
-        <p className="mt-1 max-w-2xl text-sm text-ink-muted">
-          Los estados son tuyos: escribe el que necesites y aparece solo cuando lo usas. Marca
-          <strong> entrega</strong> los que cierran una reparacion y dan los puntos.
-        </p>
-      </div>
+  const states = data?.items ?? []
 
-      <Card className="mb-5">
-        <SectionHeader title="Agregar estado" />
+  return (
+    <div className="enter max-w-4xl">
+      <PageHeader
+        eyebrow="Taller"
+        title="Estados"
+        subtitle={
+          <>
+            Los estados son tuyos: escribe el que necesites y aparece solo cuando lo usas. Marca{' '}
+            <strong className="font-medium text-ink">entrega</strong> los que cierran una
+            reparacion y dan los puntos.
+          </>
+        }
+      />
+
+      <Card className="mb-8">
+        <div className="rule mb-4">
+          <span className="eyebrow">Agregar estado</span>
+        </div>
+
         <form
-          className="flex flex-wrap items-end gap-2"
+          className="flex flex-wrap items-end gap-3"
           onSubmit={(e) => {
             e.preventDefault()
             setError(null)
@@ -62,14 +79,19 @@ export function StatesPage() {
               <Alert>{error}</Alert>
             </div>
           ) : null}
-          <Field className="min-w-[14rem] flex-1" label="Nombre">
-            <Input
-              required
-              value={newLabel}
-              onChange={(e) => setNewLabel(e.target.value)}
-              placeholder="Esperando repuesto"
-            />
+
+          <Field label="Nombre" className="min-w-[14rem] flex-1">
+            {(props) => (
+              <Input
+                {...props}
+                required
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                placeholder="Esperando repuesto"
+              />
+            )}
           </Field>
+
           <Button type="submit" loading={create.isPending} disabled={newLabel.trim().length < 2}>
             Agregar
           </Button>
@@ -79,12 +101,12 @@ export function StatesPage() {
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
+            <Skeleton key={i} className="h-24 w-full" />
           ))}
         </div>
       ) : (
         <ul className="space-y-2">
-          {(data?.items ?? []).map((s) => (
+          {states.map((s) => (
             <StateRow key={s.id} state={s} patch={patch} />
           ))}
         </ul>
@@ -105,33 +127,30 @@ function StateRow({
   const [label, setLabel] = useState(state.label)
 
   return (
-    <li
-      className={cx(
-        'card px-4 py-3 transition-opacity',
-        state.is_active === 0 && 'opacity-50',
-      )}
-    >
+    <li className={cx('card px-5 py-4', state.is_active === 0 && 'opacity-55')}>
       <div className="flex flex-wrap items-center gap-3">
-        <span className={cx('h-8 w-1 shrink-0 rounded-full', color.bar)} aria-hidden="true" />
+        <span className={cx('h-9 w-1 shrink-0', color.bar)} aria-hidden="true" />
 
         {editing ? (
-          <Input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="max-w-xs"
-            autoFocus
-          />
+          <div className="min-w-[12rem] flex-1">
+            <Input
+              value={label}
+              aria-label="Nuevo nombre del estado"
+              onChange={(e) => setLabel(e.target.value)}
+              autoFocus
+            />
+          </div>
         ) : (
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-2 text-[15px] font-medium">
-              {state.label}
-              {state.is_terminal === 1 ? (
-                <Badge tone="success">entrega</Badge>
-              ) : null}
+            <p className="flex flex-wrap items-center gap-2">
+              <span className="font-display text-lg uppercase leading-none tracking-[0.02em]">
+                {state.label}
+              </span>
+              {state.is_terminal === 1 ? <Badge tone="success">entrega</Badge> : null}
               {state.is_incident === 1 ? <Badge tone="danger">contratiempo</Badge> : null}
               {state.is_custom === 1 ? <Badge>creado por ti</Badge> : null}
             </p>
-            <p className="mt-0.5 text-[12px] text-ink-subtle">
+            <p className="eyebrow mt-2">
               {state.is_active === 0 ? 'Archivado' : 'Activo'}
               {state.is_suggested === 1 ? ' · sugerido' : ''}
             </p>
@@ -143,6 +162,7 @@ function StateRow({
             <>
               <Button
                 size="sm"
+                icon={<IconCheck className="h-3.5 w-3.5" />}
                 onClick={() => {
                   patch.mutate({ id: state.id, changes: { label } })
                   setEditing(false)
@@ -163,7 +183,12 @@ function StateRow({
             </>
           ) : (
             <>
-              <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<IconEdit className="h-3.5 w-3.5" />}
+                onClick={() => setEditing(true)}
+              >
                 Renombrar
               </Button>
               {state.is_active === 0 ? (
@@ -189,49 +214,58 @@ function StateRow({
       </div>
 
       {!editing ? (
-        <div className="mt-3 flex flex-wrap items-center gap-4 border-t border-line pt-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-ink-subtle">Color</span>
-            <div className="flex gap-1">
-              {PALETTE.map((c) => (
+        <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-4 border-t border-line pt-4">
+          {/* Selector de color con el nombre debajo: es una decision de marca
+              del estado, asi que cada muestra se identifica, no se adivina. */}
+          <div>
+            <p className="eyebrow mb-2">Color</p>
+            <div className="flex flex-wrap gap-1.5">
+              {statePalette.map((c) => (
                 <button
                   key={c}
                   type="button"
-                  onClick={() => patch.mutate({ id: state.id, changes: { color: c as StateColor } })}
+                  onClick={() =>
+                    patch.mutate({ id: state.id, changes: { color: c as StateColor } })
+                  }
                   aria-label={`Color ${c}`}
+                  aria-pressed={state.color === c}
+                  title={c}
                   className={cx(
-                    'h-4 w-4 rounded-full transition-transform',
+                    'h-5 w-5 rounded-full transition-transform duration-200 hover:scale-110',
                     stateColorClasses[c]!.dot,
-                    state.color === c && 'ring-2 ring-ink ring-offset-2 ring-offset-surface-raised',
+                    state.color === c && 'ring-2 ring-accent ring-offset-2 ring-offset-surface',
                   )}
                 />
               ))}
             </div>
           </div>
 
-          <TogglePill
-            active={state.is_terminal === 1}
-            label="Es entrega"
-            hint="Cierra la orden y otorga los puntos"
-            onClick={() =>
-              patch.mutate({ id: state.id, changes: { isTerminal: state.is_terminal !== 1 } })
-            }
-          />
-          <TogglePill
-            active={state.is_incident === 1}
-            label="Contratiempo"
-            hint="Se destaca en rojo para el cliente"
-            onClick={() =>
-              patch.mutate({ id: state.id, changes: { isIncident: state.is_incident !== 1 } })
-            }
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <FlagButton
+              active={state.is_terminal === 1}
+              label="Es entrega"
+              hint="Cierra la orden y otorga los puntos"
+              onClick={() =>
+                patch.mutate({ id: state.id, changes: { isTerminal: state.is_terminal !== 1 } })
+              }
+            />
+            <FlagButton
+              active={state.is_incident === 1}
+              label="Contratiempo"
+              hint="Se destaca en rojo para el cliente"
+              onClick={() =>
+                patch.mutate({ id: state.id, changes: { isIncident: state.is_incident !== 1 } })
+              }
+            />
+          </div>
         </div>
       ) : null}
     </li>
   )
 }
 
-function TogglePill({
+/** Bandera booleana de un estado. Activa = invertida, como el sistema. */
+function FlagButton({
   active,
   label,
   hint,
@@ -247,11 +281,12 @@ function TogglePill({
       type="button"
       onClick={onClick}
       title={hint}
+      aria-pressed={active}
       className={cx(
-        'rounded-full px-3 py-1 text-[12px] font-medium transition-colors',
+        'rounded-full border px-3 py-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] transition-colors duration-300',
         active
-          ? 'bg-ink text-brand-ink'
-          : 'bg-surface-sunken text-ink-muted hover:text-ink',
+          ? 'border-accent bg-accent text-black'
+          : 'border-line text-ink-muted hover:border-line-light hover:text-ink',
       )}
     >
       {label}

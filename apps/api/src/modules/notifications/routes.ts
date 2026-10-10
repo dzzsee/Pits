@@ -1,10 +1,9 @@
-import { Router } from 'express'
 import { z } from 'zod'
 import { config } from '../../config.js'
 import type { VehicleRow } from '../../db/types.js'
 import { notFound } from '../../shared/errors.js'
-import { ah, validate } from '../../shared/http.js'
-import { authenticate } from '../../middleware/auth.js'
+import { validate } from '../../shared/http.js'
+import { authenticate, Router } from '../../http/router.js'
 import { listNotifications, markAllRead, markRead } from './service.js'
 import { listOrders } from '../repairs/service.js'
 import {
@@ -16,91 +15,86 @@ import {
   redeemReward,
 } from '../loyalty/service.js'
 
-const router = Router()
-router.use(authenticate)
+export const meRouter = new Router()
+meRouter.use(authenticate)
 
 /** Alimenta el dashboard del cliente en una sola peticion. */
-router.get(
-  '/dashboard',
-  ah(async (req, res) => {
-    const db = req.db!
-    const user = req.user!
-    const clientId = user.id
-    const cfg = readLoyaltyConfig(db)
+meRouter.get('/dashboard', async (c) => {
+  const clientId = c.user!.id
+  const cfg = await readLoyaltyConfig(c.db)
 
-    const open = listOrders(db, { clientId, status: 'open', limit: 5 })
-    const history = listOrders(db, { clientId, status: 'delivered', limit: 8 })
+  const open = await listOrders(c.db, { clientId, status: 'open', limit: 5 })
+  const history = await listOrders(c.db, { clientId, status: 'delivered', limit: 8 })
 
-    const vehicles = db
-      .prepare<[number], VehicleRow>('SELECT * FROM vehicles WHERE client_id = ? ORDER BY plate')
-      .all(clientId)
+  const vehicles = await c.db
+    .prepare<[number], VehicleRow>('SELECT * FROM vehicles WHERE client_id = ? ORDER BY plate')
+    .all(clientId)
 
-    const account = ensureAccount(db, clientId)
-    const notifications = listNotifications(db, clientId, { limit: 10 })
+  const account = await ensureAccount(c.db, clientId)
+  const notifications = await listNotifications(c.db, clientId, { limit: 10 })
 
-    const completedRepairs = db
-      .prepare<[number], { n: number }>(
-        "SELECT COUNT(*) AS n FROM repair_orders WHERE client_id = ? AND status = 'delivered'",
-      )
-      .get(clientId)?.n ?? 0
+  const completedRepairs =
+    (
+      await c.db
+        .prepare<[number], { n: number }>(
+          "SELECT COUNT(*) AS n FROM repair_orders WHERE client_id = ? AND status = 'delivered'",
+        )
+        .get(clientId)
+    )?.n ?? 0
 
-    const spentCents = db
-      .prepare<[number], { total: number | null }>(
-        "SELECT SUM(total_cents) AS total FROM repair_orders WHERE client_id = ? AND status = 'delivered'",
-      )
-      .get(clientId)?.total ?? 0
+  const spentCents =
+    (
+      await c.db
+        .prepare<[number], { total: number | null }>(
+          "SELECT SUM(total_cents) AS total FROM repair_orders WHERE client_id = ? AND status = 'delivered'",
+        )
+        .get(clientId)
+    )?.total ?? 0
 
-    const rewards = listRedemptions(db, clientId).filter((r) => r.status === 'available')
+  const rewards = (await listRedemptions(c.db, clientId)).filter((r) => r.status === 'available')
 
-    res.json({
-      shop: { name: config.shop.name, currency: config.shop.currency },
-      openRepairs: open.items,
-      history: history.items,
-      vehicles,
-      loyalty: {
-        points: account.points_balance,
-        lifetimePoints: account.lifetime_points,
-        rewardsAvailable: account.rewards_available,
-        rewardsRedeemed: account.rewards_redeemed,
-        rewardLabel: cfg.rewardLabel,
-        pointsPerRepair: cfg.pointsPerRepair,
-        pointsPerReward: cfg.pointsPerReward,
-        ...progressToNextReward(account, cfg),
-        codes: rewards,
-      },
-      stats: {
-        completedRepairs,
-        vehicles: vehicles.length,
-        spentCents,
-      },
-      notifications: notifications.items,
-      unread: notifications.unread,
-    })
-  }),
-)
+  c.json({
+    shop: { name: config.shop.name, currency: config.shop.currency },
+    openRepairs: open.items,
+    history: history.items,
+    vehicles,
+    loyalty: {
+      points: account.points_balance,
+      lifetimePoints: account.lifetime_points,
+      rewardsAvailable: account.rewards_available,
+      rewardsRedeemed: account.rewards_redeemed,
+      rewardLabel: cfg.rewardLabel,
+      pointsPerRepair: cfg.pointsPerRepair,
+      pointsPerReward: cfg.pointsPerReward,
+      ...progressToNextReward(account, cfg),
+      codes: rewards,
+    },
+    stats: { completedRepairs, vehicles: vehicles.length, spentCents },
+    notifications: notifications.items,
+    unread: notifications.unread,
+  })
+})
 
-router.get(
-  '/repairs',
-  ah(async (req, res) => {
-    const result = listOrders(req.db!, { clientId: req.user!.id, limit: Number(req.query.limit) || 50 })
-    res.json(result)
-  }),
-)
+meRouter.get('/repairs', async (c) => {
+  c.json(
+    await listOrders(c.db, {
+      clientId: c.user!.id,
+      limit: Number(c.query.get('limit')) || 50,
+    }),
+  )
+})
 
-router.get(
-  '/vehicles',
-  ah(async (req, res) => {
-    const rows = req.db!
-      .prepare<[number], VehicleRow>(
-        `SELECT v.*, (
-           SELECT COUNT(*) FROM repair_orders o WHERE o.vehicle_id = v.id
-         ) AS order_count
-         FROM vehicles v WHERE v.client_id = ? ORDER BY v.plate`,
-      )
-      .all(req.user!.id)
-    res.json({ items: rows })
-  }),
-)
+meRouter.get('/vehicles', async (c) => {
+  const rows = await c.db
+    .prepare<[number], VehicleRow>(
+      `SELECT v.*, (
+         SELECT COUNT(*) FROM repair_orders o WHERE o.vehicle_id = v.id
+       ) AS order_count
+       FROM vehicles v WHERE v.client_id = ? ORDER BY v.plate`,
+    )
+    .all(c.user!.id)
+  c.json({ items: rows })
+})
 
 const vehicleSchema = z.object({
   plate: z.string().min(2).max(16),
@@ -112,116 +106,94 @@ const vehicleSchema = z.object({
   notes: z.string().max(500).optional(),
 })
 
-router.post(
-  '/vehicles',
-  ah(async (req, res) => {
-    const body = validate(vehicleSchema, req.body)
-    const info = req.db!
-      .prepare(
-        `INSERT INTO vehicles (client_id, plate, vin, brand, model, year, mileage, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        req.user!.id,
-        body.plate.trim().toUpperCase(),
-        body.vin ?? null,
-        body.brand.trim(),
-        body.model.trim(),
-        body.year ?? null,
-        body.mileage ?? null,
-        body.notes ?? null,
-      )
-    res.status(201).json(
-      req.db!.prepare<[], VehicleRow>('SELECT * FROM vehicles WHERE id = ?').get(Number(info.lastInsertRowid)),
+meRouter.post('/vehicles', async (c) => {
+  const body = validate(vehicleSchema, c.body)
+  const info = await c.db
+    .prepare(
+      `INSERT INTO vehicles (client_id, plate, vin, brand, model, year, mileage, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-  }),
-)
+    .run(
+      c.user!.id,
+      body.plate.trim().toUpperCase(),
+      body.vin ?? null,
+      body.brand.trim(),
+      body.model.trim(),
+      body.year ?? null,
+      body.mileage ?? null,
+      body.notes ?? null,
+    )
+  c.json(
+    await c.db
+      .prepare<[number], VehicleRow>('SELECT * FROM vehicles WHERE id = ?')
+      .get(Number(info.lastInsertRowid)),
+    201,
+  )
+})
 
-router.patch(
-  '/vehicles/:id',
-  ah(async (req, res) => {
-    const id = Number(req.params.id)
-    const current = req.db!
-      .prepare<[], VehicleRow>('SELECT * FROM vehicles WHERE id = ? AND client_id = ?')
-      .get(id, req.user!.id)
-    if (!current) throw notFound('Vehiculo no encontrado')
+meRouter.patch('/vehicles/:id', async (c) => {
+  const id = Number(c.params.id)
+  const current = await c.db
+    .prepare<[number], VehicleRow>('SELECT * FROM vehicles WHERE id = ? AND client_id = ?')
+    .get(id, c.user!.id)
+  if (!current) throw notFound('Vehiculo no encontrado')
 
-    const body = validate(vehicleSchema.partial(), req.body)
-    req.db!
-      .prepare(
-        `UPDATE vehicles SET plate = ?, vin = ?, brand = ?, model = ?, year = ?, mileage = ?, notes = ?,
-         updated_at = datetime('now') WHERE id = ?`,
-      )
-      .run(
-        body.plate?.toUpperCase() ?? current.plate,
-        body.vin ?? current.vin,
-        body.brand ?? current.brand,
-        body.model ?? current.model,
-        body.year ?? current.year,
-        body.mileage ?? current.mileage,
-        body.notes ?? current.notes,
-        id,
-      )
-    res.json(req.db!.prepare<[], VehicleRow>('SELECT * FROM vehicles WHERE id = ?').get(id))
-  }),
-)
+  const body = validate(vehicleSchema.partial(), c.body)
+  await c.db
+    .prepare(
+      `UPDATE vehicles SET plate = ?, vin = ?, brand = ?, model = ?, year = ?, mileage = ?, notes = ?,
+       updated_at = datetime('now') WHERE id = ?`,
+    )
+    .run(
+      body.plate?.toUpperCase() ?? current.plate,
+      body.vin ?? current.vin,
+      body.brand ?? current.brand,
+      body.model ?? current.model,
+      body.year ?? current.year,
+      body.mileage ?? current.mileage,
+      body.notes ?? current.notes,
+      id,
+    )
+  c.json(await c.db.prepare<[number], VehicleRow>('SELECT * FROM vehicles WHERE id = ?').get(id))
+})
 
-router.get(
-  '/loyalty',
-  ah(async (req, res) => {
-    const db = req.db!
-    const cfg = readLoyaltyConfig(db)
-    const account = ensureAccount(db, req.user!.id)
-    res.json({
-      ...account,
-      rewardLabel: cfg.rewardLabel,
-      pointsPerRepair: cfg.pointsPerRepair,
-      pointsPerReward: cfg.pointsPerReward,
-      ...progressToNextReward(account, cfg),
-      redemptions: listRedemptions(db, req.user!.id),
-      ledger: listLedger(db, req.user!.id, 30),
-    })
-  }),
-)
+meRouter.get('/loyalty', async (c) => {
+  const cfg = await readLoyaltyConfig(c.db)
+  const account = await ensureAccount(c.db, c.user!.id)
+  c.json({
+    ...account,
+    rewardLabel: cfg.rewardLabel,
+    pointsPerRepair: cfg.pointsPerRepair,
+    pointsPerReward: cfg.pointsPerReward,
+    ...progressToNextReward(account, cfg),
+    redemptions: await listRedemptions(c.db, c.user!.id),
+    ledger: await listLedger(c.db, c.user!.id, 30),
+  })
+})
 
 /** Canje de una recompensa: el cliente gasta una de las suyas disponibles. */
-router.post(
-  '/loyalty/redeem/:id',
-  ah(async (req, res) => {
-    const redemption = redeemReward(req.db!, req.user!.id, Number(req.params.id))
-    res.json(redemption)
-  }),
-)
+meRouter.post('/loyalty/redeem/:id', async (c) => {
+  c.json(await redeemReward(c.db, c.user!.id, Number(c.params.id)))
+})
 
-export default router
+/* ------------------------------ Notificaciones ------------------------ */
 
-/* ------------------------------------------------------------------ */
-
-export const notificationsRouter = Router()
+export const notificationsRouter = new Router()
 notificationsRouter.use(authenticate)
 
-notificationsRouter.get(
-  '/',
-  ah(async (req, res) => {
-    res.json(
-      listNotifications(req.db!, req.user!.id, {
-        limit: Number(req.query.limit) || 30,
-        unreadOnly: req.query.unread === '1',
-      }),
-    )
-  }),
-)
+notificationsRouter.get('/', async (c) => {
+  c.json(
+    await listNotifications(c.db, c.user!.id, {
+      limit: Number(c.query.get('limit')) || 30,
+      unreadOnly: c.query.get('unread') === '1',
+    }),
+  )
+})
 
-notificationsRouter.patch(
-  '/read-all',
-  ah(async (req, res) => {
-    res.json({ updated: markAllRead(req.db!, req.user!.id) })
-  }),
-)
+notificationsRouter.patch('/read-all', async (c) => {
+  c.json({ updated: await markAllRead(c.db, c.user!.id) })
+})
 
-notificationsRouter.patch(
-  '/:id/read',
-  ah(async (req, res) => {
-    res.json({ ok: markRead(req.db!, req.user!.id, Number(req.params.id)) })
-  }),
-)
+notificationsRouter.patch('/:id/read', async (c) => {
+  c.json({ ok: await markRead(c.db, c.user!.id, Number(c.params.id)) })
+})

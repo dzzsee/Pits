@@ -1,10 +1,3 @@
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
-
-export function cn(...inputs: ClassValue[]): string {
-  return twMerge(clsx(inputs))
-}
-
 /** $12,345.60 — los importes viajan como centavos enteros. */
 export function formatMoney(cents: number, currency = 'USD'): string {
   return new Intl.NumberFormat('es-DO', {

@@ -36,7 +36,9 @@ describe('fechas', () => {
       new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium' }).format(expected),
     )
     expect(formatDateTime(raw)).toBe(
-      new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(expected),
+      new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(
+        expected,
+      ),
     )
   })
 

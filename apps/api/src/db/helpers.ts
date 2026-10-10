@@ -9,8 +9,8 @@ export const DEFAULT_SETTINGS = {
 
 export type SettingKey = keyof typeof DEFAULT_SETTINGS
 
-export function getSettings(db: Db): Record<SettingKey, string> {
-  const rows = db
+export async function getSettings(db: Db): Promise<Record<SettingKey, string>> {
+  const rows = await db
     .prepare<[], { key: string; value: string }>('SELECT key, value FROM settings')
     .all()
   const map = { ...DEFAULT_SETTINGS } as Record<SettingKey, string>
@@ -20,32 +20,36 @@ export function getSettings(db: Db): Record<SettingKey, string> {
   return map
 }
 
-export function setSetting(db: Db, key: string, value: string): void {
-  db.prepare(
-    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
-  ).run(key, value)
+export async function setSetting(db: Db, key: string, value: string): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    )
+    .run(key, value)
 }
 
-export function nextCounter(db: Db, name: string): number {
-  db.prepare(
-    `INSERT INTO counters (name, value) VALUES (?, 1)
-     ON CONFLICT(name) DO UPDATE SET value = value + 1`,
-  ).run(name)
-  const row = db.prepare<[string], { value: number }>(
-    'SELECT value FROM counters WHERE name = ?',
-  ).get(name)
+export async function nextCounter(db: Db, name: string): Promise<number> {
+  await db
+    .prepare(
+      `INSERT INTO counters (name, value) VALUES (?, 1)
+       ON CONFLICT(name) DO UPDATE SET value = value + 1`,
+    )
+    .run(name)
+  const row = await db
+    .prepare<[string], { value: number }>('SELECT value FROM counters WHERE name = ?')
+    .get(name)
   return row?.value ?? 1
 }
 
 /** PITS-2026-0007 */
-export function nextOrderCode(db: Db): string {
-  const n = nextCounter(db, 'order')
+export async function nextOrderCode(db: Db): Promise<string> {
+  const n = await nextCounter(db, 'order')
   return `PITS-${new Date().getFullYear()}-${String(n).padStart(4, '0')}`
 }
 
-export function nextInvoiceNumber(db: Db): string {
-  const n = nextCounter(db, 'invoice')
+export async function nextInvoiceNumber(db: Db): Promise<string> {
+  const n = await nextCounter(db, 'invoice')
   return `INV-${new Date().getFullYear()}-${String(n).padStart(4, '0')}`
 }
 

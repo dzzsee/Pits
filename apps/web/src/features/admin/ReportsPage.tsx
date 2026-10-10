@@ -3,9 +3,24 @@ import { useState } from 'react'
 import { downloadCsv, api } from '@/lib/api'
 import { cx, stateColor } from '@/shared/colors'
 import { formatDate, formatMoney, formatRelative, pluralize } from '@/lib/format'
-import { Badge, Button, Card, Field, Input, SectionHeader, Skeleton } from '@/components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  CounterBar,
+  CounterDivider,
+  DataTable,
+  Field,
+  Input,
+  PageHeader,
+  Skeleton,
+  StatCounter,
+} from '@/components/ui'
+import { IconAlert, IconDownload } from '@/components/icons'
 import type { ReportsSummary } from '@/lib/types'
 import { keys } from '@/lib/query-keys'
+
+type Mechanic = ReportsSummary['mechanics'][number]
 
 export function ReportsPage() {
   const [from, setFrom] = useState('')
@@ -42,26 +57,38 @@ export function ReportsPage() {
   }
 
   return (
-    <div className="animate-fade-in">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Reportes</h1>
-          <p className="mt-1 text-sm text-ink-muted">Como va el taller y el programa de puntos.</p>
-        </div>
-        <Button variant="secondary" onClick={() => void exportCsv()} loading={exporting}>
-          Exportar CSV
-        </Button>
-      </div>
+    <div className="enter">
+      <PageHeader
+        eyebrow="Administracion"
+        title="Reportes"
+        subtitle="Como va el taller y el programa de puntos."
+        action={
+          <Button
+            variant="secondary"
+            onClick={() => void exportCsv()}
+            loading={exporting}
+            icon={<IconDownload className="h-4 w-4" />}
+          >
+            Exportar CSV
+          </Button>
+        }
+      />
 
-      <Card className="mb-5">
+      <Card className="mb-8">
         <div className="flex flex-wrap items-end gap-3">
           <Field className="w-40" label="Desde">
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            {(props) => (
+              <Input {...props} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            )}
           </Field>
+
           <Field className="w-40" label="Hasta">
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            {(props) => (
+              <Input {...props} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            )}
           </Field>
-          {(from || to) && (
+
+          {from || to ? (
             <Button
               variant="ghost"
               onClick={() => {
@@ -71,164 +98,155 @@ export function ReportsPage() {
             >
               Limpiar
             </Button>
-          )}
+          ) : null}
         </div>
       </Card>
 
       {query.isLoading || !r ? (
-        <div className="space-y-3">
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-64 w-full" />
+        <div className="space-y-6">
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-80 w-full" />
         </div>
       ) : (
-        <div className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="Ingresos" value={formatMoney(r.revenue.totalCents)} accent />
-            <Metric label="Entregadas" value={String(r.orders.delivered)} />
-            <Metric label="En curso" value={String(r.orders.open)} />
-            <Metric label="Clientes" value={String(r.loyalty.clients)} />
-          </div>
+        <div className="space-y-10">
+          <CounterBar>
+            <StatCounter value={formatMoney(r.revenue.totalCents)} label="Ingresos" accent />
+            <CounterDivider />
+            <StatCounter value={r.orders.delivered} label="Entregadas" />
+            <CounterDivider />
+            <StatCounter value={r.orders.open} label="En curso" />
+            <CounterDivider />
+            <StatCounter value={r.loyalty.clients} label="Clientes" />
+          </CounterBar>
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-8 lg:grid-cols-2">
             <Card>
-              <SectionHeader title="Estados actuales" />
-              {r.states.length ? (
-                <ul className="space-y-2.5">
-                  {r.states.slice(0, 8).map((s) => {
-                    const total = r.states.reduce((acc, x) => acc + x.count, 0) || 1
-                    const pct = Math.round((s.count / total) * 100)
-                    const color = stateColor(s.color)
-                    return (
-                      <li key={s.label}>
-                        <div className="mb-1 flex items-center justify-between text-[13px]">
-                          <span className="flex items-center gap-2">
-                            <span className={cx('h-1.5 w-1.5 rounded-full', color.dot)} />
-                            {s.label}
-                          </span>
-                          <span className="tabular-nums text-ink-muted">{s.count}</span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
-                          <div
-                            className={cx('h-full rounded-full', color.bar)}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              ) : (
-                <p className="text-sm text-ink-subtle">Sin datos.</p>
-              )}
-            </Card>
-
-            <Card>
-              <SectionHeader title="Ingresos por mes" />
-              {r.revenue.byMonth.length ? (
-                <ul className="space-y-2.5">
-                  {r.revenue.byMonth.map((m) => {
-                    const max = Math.max(...r.revenue.byMonth.map((x) => x.cents)) || 1
-                    return (
-                      <li key={m.month}>
-                        <div className="mb-1 flex items-center justify-between text-[13px]">
-                          <span className="tabular-nums text-ink-muted">{m.month}</span>
-                          <span className="tabular-nums font-medium">
-                            {formatMoney(m.cents)} · {pluralize(m.count, 'orden', 'ordenes')}
-                          </span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
-                          <div
-                            className="h-full rounded-full bg-ink"
-                            style={{ width: `${Math.round((m.cents / max) * 100)}%` }}
-                          />
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              ) : (
-                <p className="text-sm text-ink-subtle">Sin ingresos en el periodo.</p>
-              )}
-            </Card>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            <Card className="p-0">
-              <div className="px-5 pt-5">
-                <SectionHeader title="Clientes frecuentes" />
+              <div className="rule mb-5">
+                <span className="eyebrow">Estados actuales</span>
               </div>
-              <ul className="divide-y divide-line">
-                {r.loyalty.topClients.map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                    <div>
-                      <p className="text-[14px] font-medium">{c.name}</p>
-                      <p className="mt-0.5 text-[12px] text-ink-subtle">
-                        {pluralize(c.repairs, 'visita', 'visitas')}
-                      </p>
-                    </div>
-                    <Badge tone={c.points > 0 ? 'success' : 'neutral'}>{c.points} pts</Badge>
-                  </li>
-                ))}
-              </ul>
+              <BarList
+                items={r.states.slice(0, 8).map((s) => ({
+                  key: s.label,
+                  label: s.label,
+                  value: s.count,
+                  bar: stateColor(s.color).bar,
+                  dot: stateColor(s.color).dot,
+                }))}
+                empty="Sin ordenes en el periodo."
+              />
+            </Card>
+
+            <Card>
+              <div className="rule mb-5">
+                <span className="eyebrow">Ingresos por mes</span>
+              </div>
+              <BarList
+                items={r.revenue.byMonth.map((m) => ({
+                  key: m.month,
+                  label: m.month,
+                  value: m.cents,
+                  caption: `${formatMoney(m.cents)} · ${pluralize(m.count, 'orden', 'ordenes')}`,
+                  // Escala relativa al mes mas alto, no al total: si un mes
+                  // dwarfs al resto, los demas se aplastan a cero.
+                  max: Math.max(...r.revenue.byMonth.map((x) => x.cents)) || 1,
+                }))}
+                empty="Sin ingresos en el periodo."
+              />
+            </Card>
+          </div>
+
+          <div className="grid gap-8 lg:grid-cols-2">
+            <Card className="p-0">
+              <div className="rule px-5 pb-4 pt-5">
+                <span className="eyebrow">Clientes frecuentes</span>
+              </div>
+              {r.loyalty.topClients.length ? (
+                <ul className="divide-y divide-line">
+                  {r.loyalty.topClients.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                      <div>
+                        <p className="text-sm font-medium">{c.name}</p>
+                        <p className="eyebrow mt-1.5">
+                          {pluralize(c.repairs, 'visita', 'visitas')}
+                        </p>
+                      </div>
+                      <Badge tone={c.points > 0 ? 'success' : 'neutral'}>{c.points} pts</Badge>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-6 pb-10 text-center text-sm text-ink-muted">
+                  Sin clientes con visitas.
+                </p>
+              )}
             </Card>
 
             <Card className="p-0">
-              <div className="px-5 pt-5">
-                <SectionHeader title="Contratiempos" description="Lo que el mecanico marco como aviso." />
+              <div className="rule px-5 pb-4 pt-5">
+                <span className="eyebrow">Contratiempos</span>
               </div>
               {r.incidents.length ? (
                 <ul className="divide-y divide-line">
                   {r.incidents.map((i) => (
-                    <li key={`${i.orderId}-${i.created_at}`} className="px-5 py-3">
+                    <li key={`${i.orderId}-${i.created_at}`} className="px-5 py-3.5">
                       <div className="flex items-center justify-between gap-3">
-                        <span className="font-mono text-[12px]">{i.code}</span>
-                        <span className="text-[12px] text-ink-subtle">
+                        <span className="font-mono text-[11px] tracking-[0.06em] text-ink-muted">
+                          {i.code}
+                        </span>
+                        <span className="font-mono text-[11px] text-ink-muted/70">
                           {formatRelative(i.created_at)}
                         </span>
                       </div>
-                      <p className="mt-1 text-[13px]">{i.state}</p>
+                      <p className="mt-1.5 text-sm">{i.state}</p>
                       {i.note ? (
-                        <p className="mt-0.5 text-[13px] text-ink-muted">{i.note}</p>
+                        <p className="mt-1 text-[13px] text-ink-muted">{i.note}</p>
                       ) : null}
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="px-5 pb-8 text-sm text-ink-subtle">Sin contratiempos.</p>
+                <div className="flex flex-col items-center px-6 py-10 text-center">
+                  <IconAlert className="mb-4 h-10 w-10 text-ok/60" />
+                  <p className="text-sm text-ink-muted">Sin contratiempos en el periodo.</p>
+                </div>
               )}
             </Card>
           </div>
 
           <Card className="p-0">
-            <div className="px-5 pt-5">
-              <SectionHeader title="Produccion por mecanico" />
+            <div className="rule px-5 pb-2 pt-5">
+              <span className="eyebrow">Produccion por mecanico</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-line text-left text-[12px] text-ink-subtle">
-                    <th className="px-5 py-2 font-medium">Mecanico</th>
-                    <th className="px-5 py-2 text-right font-medium">Ordenes</th>
-                    <th className="px-5 py-2 text-right font-medium">Facturado</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {r.mechanics.map((m) => (
-                    <tr key={m.id}>
-                      <td className="px-5 py-2.5 font-medium">{m.name}</td>
-                      <td className="px-5 py-2.5 text-right tabular-nums">{m.orders}</td>
-                      <td className="px-5 py-2.5 text-right tabular-nums">
-                        {formatMoney(m.revenueCents)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="px-5 pb-5">
+              <DataTable<Mechanic>
+                rows={r.mechanics}
+                getKey={(m) => String(m.id)}
+                empty="Sin mecanicos con ordenes en el periodo."
+                columns={[
+                  {
+                    key: 'name',
+                    header: 'Mecanico',
+                    render: (m) => <span className="font-medium">{m.name}</span>,
+                  },
+                  {
+                    key: 'orders',
+                    header: 'Ordenes',
+                    align: 'right',
+                    render: (m) => m.orders,
+                  },
+                  {
+                    key: 'revenue',
+                    header: 'Facturado',
+                    align: 'right',
+                    render: (m) => formatMoney(m.revenueCents),
+                  },
+                ]}
+              />
             </div>
           </Card>
 
-          <p className="text-center text-[12px] text-ink-subtle">
-            Periodo: {formatDate(r.range.from)} — {formatDate(r.range.to)}
+          <p className="text-center font-mono text-[11px] uppercase tracking-[0.12em] text-ink-muted">
+            Periodo {formatDate(r.range.from)} — {formatDate(r.range.to)}
           </p>
         </div>
       )}
@@ -236,26 +254,57 @@ export function ReportsPage() {
   )
 }
 
-function Metric({
-  label,
-  value,
-  accent,
-}: {
+interface BarItem {
+  key: string
   label: string
-  value: string
-  accent?: boolean
-}) {
+  value: number
+  caption?: string
+  /** Escala de la barra. Si falta, se usa el maximo del propio listado. */
+  max?: number
+  bar?: string
+  dot?: string
+}
+
+/**
+ * Lista de barras horizontales con su valor. Se usa para distribuciones, no
+ * para series de tiempo: la magnitud se lee en la etiqueta, no en la longitud
+ * de la barra.
+ */
+function BarList({ items, empty }: { items: BarItem[]; empty: string }) {
+  if (!items.length) {
+    return <p className="py-8 text-center text-sm text-ink-muted">{empty}</p>
+  }
+
+  const scale = Math.max(...items.map((i) => i.max ?? i.value)) || 1
+
   return (
-    <Card className="p-4">
-      <p className="text-[12px] uppercase tracking-wide text-ink-subtle">{label}</p>
-      <p
-        className={cx(
-          'mt-1 text-2xl font-semibold tabular-nums tracking-tight',
-          accent && 'text-emerald-600 dark:text-emerald-400',
-        )}
-      >
-        {value}
-      </p>
-    </Card>
+    <ul className="space-y-4">
+      {items.map((item) => {
+        const reference = item.max ?? scale
+        const pct = reference > 0 ? Math.round((item.value / reference) * 100) : 0
+
+        return (
+          <li key={item.key}>
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2 text-sm">
+                {item.dot ? (
+                  <span className={cx('h-2 w-2 shrink-0 rounded-full', item.dot)} />
+                ) : null}
+                <span className="truncate font-mono text-[12px]">{item.label}</span>
+              </span>
+              <span className="shrink-0 font-mono text-[12px] tabular-nums text-ink-muted">
+                {item.caption ?? item.value}
+              </span>
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-line">
+              <div
+                className={cx('h-full rounded-full transition-[width] duration-500', item.bar ?? 'bg-ink')}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }

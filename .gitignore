@@ -16,6 +16,10 @@ apps/api/data/
 .env.*
 !.env.example
 
+# Cloudflare
+.wrangler/
+.dev.vars
+
 # PWA / service worker
 apps/web/dev-dist/
 apps/web/.vite/

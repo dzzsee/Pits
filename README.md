@@ -6,7 +6,7 @@ va escribiendo el estado de cada reparacion tal como lo diria en el taller
 cliente lo ve en tiempo real en su portal, y cada entrega le suma puntos para un
 lavado gratis.
 
-Monorepo: **Vite + React** (PWA) y **Express + SQLite**.
+Monorepo: **Vite + React** (PWA) y un API en **Cloudflare Workers + D1** (en local, Node + SQLite).
 
 ---
 
@@ -79,15 +79,21 @@ nombre y vigencia de la recompensa) sin tocar codigo.
 ```
 pits/
 ├─ apps/
-│  ├─ api/                        Express + SQLite
+│  ├─ api/                        Workers + D1 (local: Node + SQLite)
 │  │  ├─ src/
-│  │  │  ├─ config.ts             env tipado
+│  │  │  ├─ config.ts             env tipado (sin Node: entra en el bundle)
+│  │  │  ├─ config.node.ts        carga el .env para desarrollo
+│  │  │  ├─ app.ts                ensamblado de rutas y despacho
 │  │  │  ├─ db/
-│  │  │  │  ├─ driver.ts          adaptador better-sqlite3 / node:sqlite
+│  │  │  │  ├─ database.ts        interfaz `Database` (asincrona)
+│  │  │  │  ├─ driver.ts          SQLite local: better-sqlite3 / node:sqlite
+│  │  │  │  ├─ d1.ts              driver de Cloudflare D1
 │  │  │  │  ├─ migrations.ts      esquema (una migracion, append-only)
 │  │  │  │  ├─ helpers.ts         settings, contadores, codigos, slug
 │  │  │  │  └─ seed.ts            estados sugeridos + admin + demo
-│  │  │  ├─ middleware/auth.ts    JWT + roles
+│  │  │  ├─ http/router.ts        router sobre fetch + JWT + roles
+│  │  │  ├─ lib/                  password (PBKDF2), jwt, webpush (VAPID)
+│  │  │  ├─ worker/               entry del Worker + Durable Object
 │  │  │  ├─ modules/
 │  │  │  │  ├─ auth/              registro, login, refresh, perfil
 │  │  │  │  ├─ notifications/     portal del cliente (/me) + feed
@@ -97,8 +103,8 @@ pits/
 │  │  │  │  ├─ realtime/          canal SSE /api/stream
 │  │  │  │  └─ push/              VAPID y suscripciones
 │  │  │  └─ shared/               errores, validacion, colores, bus de eventos
-│  │  ├─ tests/                   41 tests (vitest)
-│  │  └─ scripts/smoke.ts         prueba de humo, incluido el SSE
+│  │  ├─ tests/                   47 tests (vitest)
+│  │  └─ scripts/                 humo, barrido, volcado, hash del seed, carga a D1
 │  └─ web/                        Vite + React + PWA
 │     ├─ src/
 │     │  ├─ app/                   sesion y rutas
@@ -167,6 +173,7 @@ mecanico (otra pestana)          cliente (movil)
 ---
 
 ## Roles| | Cliente | Mecanico | Admin |
+
 | --- | :-: | :-: | :-: |
 | Ver su reparacion, historial y puntos | x | | |
 | Sus vehiculos y sus datos | x | | |
@@ -217,22 +224,94 @@ npm run dev          # API y web a la vez
 npm run build        # compila API y web
 npm run typecheck    # TypeScript estricto en ambos
 npm run lint
-npm test             # 64 tests
+npm test             # 70 tests
 
 npm run db:seed                       # resiembra datos de demo
 npm run smoke -w @pits/api           # humo end-to-end, incluido el SSE (con el API arriba)
 node apps/web/scripts/generate-icons.mjs   # regenera los iconos PNG
 ```
 
+Para apuntar el humo contra el despliegue en vez de localhost:
+
+```bash
+SMOKE_BASE=https://pits.g25vkprcqs.workers.dev/api npm run smoke -w @pits/api
+```
+
+---
+
+## Despliegue en Cloudflare
+
+Un solo Worker sirve el API y el frontend: una URL, sin CORS entre las dos
+mitades. La base es **D1** y el canal de tiempo real es un **Durable Object**.
+
+```bash
+npm run build -w @pits/web      # los assets se compilan primero
+npm run deploy:d1 -w @pits/api  # sube pits.sql a D1
+npm run deploy -w @pits/api     # publica Worker + assets
+```
+
+Los secretos no van en el repositorio:
+
+```bash
+npx wrangler secret put JWT_SECRET
+npx wrangler secret put VAPID_PUBLIC_KEY
+npx wrangler secret put VAPID_PRIVATE_KEY
+npx wrangler secret put VAPID_SUBJECT
+```
+
+`pits.sql` sigue siendo la fuente de verdad del proyecto: es lo que se sube a D1
+y lo que importa una maquina local en su primer arranque. Ojo al subirlo, por
+dos motivos que hacen fallar la carga si se copia tal cual:
+
+- D1 no acepta el envoltorio `BEGIN TRANSACTION` del volcado, ni
+  `PRAGMA foreign_keys=OFF`.
+- El volcado inserta tabla por tabla en orden de creacion, que **no respeta las
+  claves foraneas** (`order_items` y `ledger_entries` referencian `redemptions`,
+  que se inserta despues). En SQLite local lo tapa el `PRAGMA`; D1 las exige.
+
+`scripts/d1-seed.ts` resuelve las dos cosas: limpia las sentencias de control y
+calcula el orden de carga a partir del grafo de referencias del propio esquema.
+No hay que editar `pits.sql` a mano para D1; se regenera la copia con ese script.
+
 ---
 
 ## Notas de implementacion
 
-**SQLite sin binding nativo.** El proyecto declara `better-sqlite3`, pero su
-binario requiere cadena de compilacion (VS Build Tools en Windows). `src/db/driver.ts`
-intenta cargarlo y, si no puede, cae a `node:sqlite`, que viene en Node 22+. Toda
-la app habla con la interfaz `Database` de ese archivo, asi que el resto del
-codigo no sabe cual driver esta activo.
+**Un dominio, dos runtimes.** `apps/api` corre en Node para desarrollo y en
+Workers para produccion, y el dominio es el mismo. Eso obliga a dos cosas:
+
+- _La base es asincrona._ D1 solo ofrece promesas, asi que `Database` es
+  asincrona y los drivers de Node envuelven sus llamadas sincronas. Los tests
+  siguen corriendo contra SQLite en local.
+- _La configuracion esta partida._ `src/config.ts` no importa nada de Node, y
+  `src/config.node.ts` carga el `.env` para desarrollo. Si compartieran
+  archivo, el bundler arrastraria `dotenv` y `node:fs` al Worker.
+
+**Contrasenas en PBKDF2, no argon2.** `argon2` es un binario nativo y no existe
+en Workers. El hashing es PBKDF2-SHA256 sobre WebCrypto, con comparacion en
+tiempo constante. Los hashes de argon2 se rechazan, asi que `pits.sql` se
+re-hashea con `npm run db:rehash -w @pits/api`.
+
+**Transacciones en D1.** D1 no tiene transacciones interactivas: no hay
+`BEGIN`/`COMMIT` ni lectura dentro de una escritura en curso. El driver ejecuta
+las escrituras en orden y sin atomicidad. Acumularlas en un `batch()` al final
+daria atomicidad, pero las lecturas intermedias verian datos viejos y
+`awardForRepair` consulta el saldo justo despues de sumarle puntos: con el buffer
+no cruzaria el umbral de recompensa. Se prefiere ejecucion correcta a
+atomicidad aparente. En SQLite local si hay transacciones reales.
+
+**El realtime necesita memoria estable.** Un isolate de Worker es efimero, asi
+que el bus de eventos en memoria no serviria. `worker/realtime-do.ts` es un
+Durable Object que sostiene las conexiones y reparte los eventos; en local se
+usa el mismo bus en memoria a traves de la misma interfaz.
+
+**El token viaja por query string.** `EventSource` no admite cabeceras, asi que
+`/api/stream?token=...` es lo unico posible en el navegador. Por eso el
+despliegue tiene que ir por HTTPS.
+
+**Nada de trabajo en segundo plano.** En Workers el isolate termina cancelando
+las promesas sueltas cuando la respuesta se cierra, asi que `void promesa()` no
+vale: todo lo que deba completarse se espera con `await`.
 
 **Importes.** Todo el dinero viaja como centavos enteros (`total_cents`) y solo se
 formatea al mostrarlo. La conversion vive en `apps/web/src/lib/format.ts`.

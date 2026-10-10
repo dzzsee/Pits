@@ -1,0 +1,47 @@
+#:schema node_modules/wrangler/config-schema.json
+#
+# Un solo Worker sirve el API y el frontend. `pits.sql` es la fuente de verdad
+# del proyecto y es lo que se carga en D1 al desplegar.
+#
+#   npm run deploy:d1 -w @pits/api   # sube el esquema y los datos
+#   npm run deploy -w @pits/api      # publica API + assets
+#
+name = "pits"
+main = "apps/api/src/worker/index.ts"
+compatibility_date = "2025-01-01"
+
+[assets]
+# El API y el web se sirven desde el mismo Worker: una sola URL y sin CORS
+# entre las dos mitades. Lo que no existe como asset lo atiende `fetch`.
+directory = "apps/web/dist"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pits-db"
+database_id = "db18500f-a6b5-490a-ac21-93fe2aad2eaa"
+
+# El hub de SSE. Un isolate de Worker es efimero, asi que las conexiones
+# abiertas necesitan un objeto con memoria estable.
+[[durable_objects.bindings]]
+name = "REALTIME"
+class_name = "RealtimeHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RealtimeHub"]
+
+[vars]
+NODE_ENV = "production"
+SHOP_NAME = "Pits"
+SHOP_CURRENCY = "USD"
+# Solo aplica al servidor de desarrollo, donde el web corre en otro puerto.
+# En el Worker el frontend y el API comparten origen y el CORS va desactivado.
+CORS_ORIGIN = "https://pits.g25vkprcqs.workers.dev"
+
+# Los secretos no van en el repositorio; se cargan con
+# `wrangler secret put <NOMBRE>`:
+#   JWT_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+
+[observability]
+enabled = true

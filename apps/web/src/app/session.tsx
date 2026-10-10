@@ -8,7 +8,12 @@ interface SessionValue {
   user: User | null
   status: 'loading' | 'authenticated' | 'anonymous'
   login: (email: string, password: string) => Promise<User>
-  register: (input: { name: string; email: string; password: string; phone?: string }) => Promise<User>
+  register: (input: {
+    name: string
+    email: string
+    password: string
+    phone?: string
+  }) => Promise<User>
   logout: () => void
   setUser: (user: User) => void
   isStaff: boolean
@@ -53,12 +58,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const authenticate = useCallback((data: { user: User; accessToken: string; refreshToken: string }) => {
-    tokenStore.set(data.accessToken, data.refreshToken)
-    setUserState(data.user)
-    setStatus('authenticated')
-    return data.user
-  }, [])
+  const authenticate = useCallback(
+    (data: { user: User; accessToken: string; refreshToken: string }) => {
+      tokenStore.set(data.accessToken, data.refreshToken)
+      setUserState(data.user)
+      setStatus('authenticated')
+      return data.user
+    },
+    [],
+  )
 
   const login = useCallback(
     async (email: string, password: string) => {

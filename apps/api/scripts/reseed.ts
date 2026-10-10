@@ -10,13 +10,12 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { config } from '../src/config.js'
-import { closeDb, getDb } from '../src/db/connection.js'
+import { closeDb, databasePath, getDb, seedSqlPath } from '../src/db/connection.js'
 import { dumpDatabase } from '../src/db/dump.js'
 import { seed } from '../src/db/seed.js'
 
 for (const suffix of ['', '-wal', '-shm']) {
-  fs.rmSync(`${config.databasePath}${suffix}`, { force: true })
+  fs.rmSync(`${databasePath()}${suffix}`, { force: true })
 }
 console.log('Base anterior borrada; se reconstruye desde migraciones.')
 
@@ -24,21 +23,22 @@ console.log('Base anterior borrada; se reconstruye desde migraciones.')
 // `force` lo esquiva: resiembra con datos de demo garantizados.
 await seed({ force: true })
 
-const db = getDb()
-const sql = dumpDatabase(db)
-fs.mkdirSync(path.dirname(config.seedSqlPath), { recursive: true })
-fs.writeFileSync(config.seedSqlPath, sql, 'utf8')
+const db = await getDb()
+const target = seedSqlPath()
+const sql = await dumpDatabase(db)
+fs.mkdirSync(path.dirname(target), { recursive: true })
+fs.writeFileSync(target, sql, 'utf8')
 
-const rows = db
+const rows = (await db
   .prepare<[], { n: number }>(
     `SELECT (SELECT COUNT(*) FROM users) + (SELECT COUNT(*) FROM vehicles)
-          + (SELECT COUNT(*) FROM repair_orders) + (SELECT COUNT(*) FROM state_events)
-          + (SELECT COUNT(*) FROM order_items) + (SELECT COUNT(*) FROM notifications) AS n`,
+            + (SELECT COUNT(*) FROM repair_orders) + (SELECT COUNT(*) FROM state_events)
+            + (SELECT COUNT(*) FROM order_items) + (SELECT COUNT(*) FROM notifications) AS n`,
   )
-  .get()!.n
+  .get())!.n
 
-console.log(`Volcado regenerado en ${path.relative(process.cwd(), config.seedSqlPath)}`)
+console.log(`Volcado regenerado en ${path.relative(process.cwd(), target)}`)
 console.log(`  ${sql.split('\n').filter((l) => l.startsWith('INSERT INTO')).length} filas escritas`)
 console.log(`  ${rows} filas de datos en la base`)
 
-closeDb()
+await closeDb()

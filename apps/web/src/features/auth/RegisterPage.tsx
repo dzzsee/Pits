@@ -23,13 +23,15 @@ export function RegisterPage() {
     setError(null)
     setLoading(true)
     try {
-      await register({
+      const account = await register({
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
         phone: form.phone.trim() || undefined,
       })
-      navigate('/', { replace: true })
+      // La cuenta creada puede ser de cliente o de taller: el destino lo
+      // decide el rol que devuelve el API, no una ruta fija.
+      navigate(homeFor(account.role), { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'No pudimos crear tu cuenta')
     } finally {
@@ -44,42 +46,57 @@ export function RegisterPage() {
       footer={
         <>
           Ya tienes cuenta?{' '}
-          <Link to="/entrar" className="font-medium text-ink underline underline-offset-4">
+          <Link to="/entrar" className="font-medium text-accent underline underline-offset-4">
             Entrar
           </Link>
         </>
       }
     >
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form onSubmit={onSubmit} className="space-y-5">
         {error ? <Alert>{error}</Alert> : null}
+
         <Field label="Nombre">
-          <Input required value={form.name} onChange={set('name')} placeholder="Tu nombre" />
+          {(props) => (
+            <Input {...props} required value={form.name} onChange={set('name')} placeholder="Tu nombre" />
+          )}
         </Field>
+
         <Field label="Correo">
-          <Input
-            type="email"
-            autoComplete="email"
-            required
-            value={form.email}
-            onChange={set('email')}
-            placeholder="tucorreo@email.com"
-          />
+          {(props) => (
+            <Input
+              {...props}
+              type="email"
+              autoComplete="email"
+              required
+              value={form.email}
+              onChange={set('email')}
+              placeholder="tucorreo@email.com"
+            />
+          )}
         </Field>
+
         <Field label="Telefono" hint="Opcional. Nos sirve para avisarte.">
-          <Input value={form.phone} onChange={set('phone')} placeholder="+1 809 555 0101" />
+          {(props) => (
+            <Input {...props} value={form.phone} onChange={set('phone')} placeholder="+1 809 555 0101" />
+          )}
         </Field>
+
         <Field label="Contrasena" hint="Minimo 8 caracteres.">
-          <Input
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={8}
-            value={form.password}
-            onChange={set('password')}
-            placeholder="••••••••"
-          />
+          {(props) => (
+            <Input
+              {...props}
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              value={form.password}
+              onChange={set('password')}
+              placeholder="••••••••"
+            />
+          )}
         </Field>
-        <Button type="submit" className="w-full" loading={loading}>
+
+        <Button type="submit" size="lg" className="w-full" loading={loading}>
           Crear cuenta
         </Button>
       </form>
