@@ -9,7 +9,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
-import { applyConfig, type AppConfig } from './config.js'
+import { applyConfig, assertSecureConfig, type AppConfig } from './config.js'
 
 export async function loadNodeConfig(): Promise<AppConfig> {
   // Este archivo vive en `src/`, asi que la raiz del paquete es un nivel arriba.
@@ -17,7 +17,12 @@ export async function loadNodeConfig(): Promise<AppConfig> {
   loadEnv({ path: path.resolve(here, '..', '.env') })
 
   const env = process.env as Record<string, string | undefined>
-  return applyConfig(readFrom(env))
+  const next = applyConfig(readFrom(env))
+  // Mismo guard que en el Worker: sin `JWT_SECRET` los tokens serían
+  // forjables. En desarrollo no muerde, porque `.env.example` documenta el valor
+  // de relleno como algo a cambiar antes de publicar.
+  assertSecureConfig(next)
+  return next
 }
 
 /**

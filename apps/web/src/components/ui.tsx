@@ -519,10 +519,23 @@ export function Toggle({
           checked ? 'border-accent bg-accent' : 'border-line bg-surface-hover',
         )}
       >
+        {/*
+          El boton se posiciona con `left`, no con una traslacion horizontal.
+
+          Antes se movia combinando la utilidad de centrado vertical con una
+          traslacion en X. Ambas redefinen `transform` y se combinan por
+          variables CSS, asi que el resultado depende de que las dos esten
+          presentes y en el orden correcto: cualquier refactor que toque una de
+          ellas mueve el boton al lado contrario sin que nada falle. `left` no
+          depende de esa composicion.
+
+          Geometria: pista `w-9` (36px), boton `w-3.5` (14px). Margen de 2px a
+          cada lado deja 18px de recorrido: apagado en 2, encendido en 20.
+        */}
         <span
           className={cx(
-            'absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-transform duration-300',
-            checked ? 'translate-x-[19px] bg-black' : 'translate-x-[3px] bg-ink-muted',
+            'absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-[left] duration-300',
+            checked ? 'left-5 bg-black' : 'left-0.5 bg-ink-muted',
           )}
         />
       </button>
@@ -782,7 +795,7 @@ export function ConfirmButton({
 
   useEffect(() => {
     if (!armed) return
-    const timer = window.setTimeout(() => setArmed(false), 4000)
+    const timer = window.setTimeout(() => setArmed(false), 6000)
     return () => window.clearTimeout(timer)
   }, [armed])
 
@@ -795,18 +808,23 @@ export function ConfirmButton({
   }
 
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex items-center gap-1.5">
       <Button
         variant={variant}
         size={size}
         className={className}
         icon={<IconCheck className="h-3.5 w-3.5" />}
-        onClick={onConfirm}
+        onClick={() => {
+          // Se desarma antes de ejecutar: si la mutacion falla, el boton ya
+          // vuelve al estado inicial y no se queda esperando un segundo clic.
+          setArmed(false)
+          onConfirm()
+        }}
       >
         {confirmLabel}
       </Button>
-      <Button variant="ghost" size={size} onClick={() => setArmed(false)}>
-        Cancelar
+      <Button variant="ghost" size={size} onClick={() => setArmed(false)} aria-label="Cancelar">
+        <IconClose className="h-3.5 w-3.5" />
       </Button>
     </span>
   )

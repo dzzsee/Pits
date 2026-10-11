@@ -9,7 +9,9 @@ import { createApp, handleRequest } from '../app.js'
 import { loadWorkerConfig } from '../config.js'
 import { openD1, type D1Binding } from '../db/d1.js'
 import { setHub, type RealtimeHub } from '../shared/events.js'
+import { setLimiter, type RateLimiter } from '../lib/rate-limit.js'
 import { RealtimeHub as Hub } from './realtime-do.js'
+import { RateLimiter as RateLimiterDO } from './rate-limit-do.js'
 
 /**
  * El tipo de `Env` mezcla bindings (base de datos, Durable Object, assets) y
@@ -19,10 +21,12 @@ import { RealtimeHub as Hub } from './realtime-do.js'
 export interface Env {
   DB: D1Binding
   REALTIME: DurableObjectNamespace
+  RATE_LIMITER: DurableObjectNamespace
   ASSETS: Fetcher
 }
 
 export { Hub as RealtimeHub }
+export { RateLimiterDO as RateLimiter }
 
 let app: ReturnType<typeof createApp> | null = null
 
@@ -54,6 +58,10 @@ export default {
     // `emitToStaff` del dominio entregan al Durable Object.
     setHub(makeHub(env.REALTIME))
 
+    // El limitador necesita memoria estable por la misma razon: un isolate es
+    // efimero, asi que un contador en memoria no frenaria nada.
+    setLimiter(makeLimiter(env.RATE_LIMITER))
+
     const url = new URL(request.url)
 
     // Rutas del frontend. Primero se deja que el binding resuelva el asset
@@ -61,10 +69,13 @@ export default {
     // devuelve el index para que el router del cliente decida la pantalla.
     if (!url.pathname.startsWith('/api/')) {
       const asset = await env.ASSETS.fetch(request)
-      if (asset.status !== 404) return asset
+      if (asset.status !== 404) return noStoreHtml(asset)
 
       if (isNavigation(request, url)) {
-        return env.ASSETS.fetch(new Request(new URL('/index.html', url.origin), request))
+        const index = await env.ASSETS.fetch(
+          new Request(new URL('/index.html', url.origin), request),
+        )
+        return noStoreHtml(index)
       }
       return asset
     }
@@ -78,11 +89,42 @@ export default {
   },
 }
 
+/**
+ * El HTML nunca se cachea.
+ *
+ * Los assets llevan hash de contenido, asi que cachearlos es seguro y
+ * necesario. El index no: si el edge lo fija, un despliegue nuevo deja de
+ * verse porque el HTML sigue apuntando a los hashes anteriores, que para
+ * entonces ya no existen. Se translateó en un 404 de CSS y JS, con la pantalla
+ * en blanco y sin ninguna pista de que hubiera un despliegue nuevo.
+ *
+ * `no-store` en vez de `no-cache` a proposito: `no-cache` permite revalidar y
+ * el edge puede seguir sirviendo una copia almacenada entre recargas.
+ */
+function noStoreHtml(res: Response): Response {
+  const type = res.headers.get('content-type') ?? ''
+  if (!type.includes('text/html')) return res
+
+  const headers = new Headers(res.headers)
+  headers.set('Cache-Control', 'no-store, must-revalidate')
+  // El HTML pinado es el unico que rompe el cache del service worker.
+  headers.set('Vary', 'Accept-Encoding')
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+}
+
 function makeHub(namespace: DurableObjectNamespace): RealtimeHub {
   const stub = namespace.get(namespace.idFromName('pits')) as unknown as Hub
   return {
     open: (userId, role) => stub.open(userId, role),
     publish: (userId, event) => stub.publish(userId, event),
     publishStaff: (event) => stub.publishStaff(event),
+  }
+}
+
+function makeLimiter(namespace: DurableObjectNamespace): RateLimiter {
+  const stub = namespace.get(namespace.idFromName('pits')) as unknown as RateLimiterDO
+  return {
+    hit: (key, limit, windowMs) => stub.hit(key, limit, windowMs),
+    reset: (key) => stub.reset(key),
   }
 }

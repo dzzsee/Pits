@@ -126,10 +126,20 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const text = await res.text()
   const payload = text ? (JSON.parse(text) as unknown) : null
 
-  if (!res.ok) {
+if (!res.ok) {
     const err = (
       payload as { error?: { message?: string; code?: string; details?: unknown } } | null
     )?.error
+
+    // Un 429 no es un fallo: es el servidor diciendo "haspera". Sin este texto
+    // el usuario ve un error generico y prueba otra vez, que es justo lo que
+    // empeora el limite.
+    if (res.status === 429) {
+      const seconds = Number(res.headers.get('Retry-After'))
+      const espera = Number.isFinite(seconds) && seconds > 0 ? ` Espera ${seconds}s.` : ''
+      throw new ApiError(429, `Demasiados intentos.${espera}`, 'rate_limited')
+    }
+
     throw new ApiError(
       res.status,
       err?.message ?? 'Algo salio mal. Intenta de nuevo.',

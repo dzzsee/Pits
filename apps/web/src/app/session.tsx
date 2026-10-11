@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api, setUnauthorizedHandler, tokenStore } from '@/lib/api'
+import { useIdleLogout } from '@/lib/use-idle-logout'
 import type { Role, User } from '@/lib/types'
 import { useRealtime } from '@/lib/use-realtime'
 
@@ -14,7 +15,7 @@ interface SessionValue {
     password: string
     phone?: string
   }) => Promise<User>
-  logout: () => void
+  logout: () => Promise<void>
   setUser: (user: User) => void
   isStaff: boolean
 }
@@ -90,11 +91,54 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [authenticate],
   )
 
-  const logout = useCallback(() => {
+  /**
+   * Cerrar sesion de verdad: revoca la sesion en el servidor y no solo borra
+   * los tokens del navegador.
+   *
+   * Sin la revocacion, "salir" era un forget: el refresh token (30 dias) seguia
+   * sirviendo para obtener tokens nuevos.
+   */
+  const logout = useCallback(async () => {
+    const token = tokenStore.access()
     tokenStore.clear()
     setUserState(null)
     setStatus('anonymous')
+
+    if (!token) return
+    try {
+      await api.post('/auth/logout', { accessToken: token })
+    } catch {
+      // Si no se puede avisar, la sesion local ya esta cerrada igualmente.
+    }
   }, [])
+
+  /**
+   * Cierre automatico: 15 minutos sin actividad, o al cerrar la pestana.
+   *
+   * La deteccion de inactividad es del cliente a proposito. "Inactividad"
+   * significa que la persona no esta haciendo nada, no que la pagina este
+   * callada: alguien puede veinte minutos leyendo el historial de su carro sin
+   * generar ni una peticion, y cerrar su sesion por eso seria incorrecto.
+   */
+  useIdleLogout(status === 'authenticated', logout)
+
+  // Al cerrar la pestana no hay tiempo para un `fetch` normal: se usa
+  // `sendBeacon`, que el navegador entrega aunque la pagina este dying.
+  useEffect(() => {
+    if (status !== 'authenticated') return
+
+    const beacon = () => {
+      const token = tokenStore.access()
+      if (!token) return
+      navigator.sendBeacon(
+        '/api/auth/logout',
+        new Blob([JSON.stringify({ accessToken: token })], { type: 'application/json' }),
+      )
+    }
+
+    window.addEventListener('pagehide', beacon)
+    return () => window.removeEventListener('pagehide', beacon)
+  }, [status])
 
   const value = useMemo<SessionValue>(
     () => ({

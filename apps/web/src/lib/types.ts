@@ -7,6 +7,8 @@ export interface User {
   phone: string | null
   name: string
   created_at: string
+  /** El API lo envia siempre; el panel lo usa para activar y desactivar. */
+  is_active: number
 }
 
 export type StateColor =

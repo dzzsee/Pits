@@ -8,6 +8,8 @@ export interface UserRow {
   name: string
   password_hash: string
   is_active: 0 | 1
+  /** Version de sesion; se incrementa al cambiar la contrasena. */
+  token_version: number
   created_at: string
   updated_at: string
 }

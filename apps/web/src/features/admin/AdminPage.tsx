@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/lib/api'
+import { useSession } from '@/app/session'
 import {
   Alert,
   Badge,
@@ -30,6 +31,7 @@ const ROLE_LABEL: Record<Role, string> = {
 }
 
 export function AdminPage() {
+  const { user: currentUser } = useSession()
   const queryClient = useQueryClient()
   const [form, setForm] = useState({
     role: 'mechanic',
@@ -39,6 +41,14 @@ export function AdminPage() {
     password: '',
   })
   const [error, setError] = useState<string | null>(null)
+  const [toggleFeedback, setToggleFeedback] = useState<{ text: string; ok: boolean } | null>(null)
+
+  // El aviso se retira solo: es confirmacion de una accion puntual, no un estado.
+  useEffect(() => {
+    if (!toggleFeedback) return
+    const timer = window.setTimeout(() => setToggleFeedback(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [toggleFeedback])
 
   const users = useQuery({
     queryKey: keys.adminUsers(),
@@ -68,7 +78,17 @@ export function AdminPage() {
   const setActive = useMutation({
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
       api.patch(`/admin/users/${id}`, { isActive }),
-    onSuccess: refresh,
+    onSuccess: async (_data, { isActive }) => {
+      setToggleFeedback({ text: isActive ? 'Cuenta reactivada' : 'Cuenta desactivada', ok: true })
+      await refresh()
+    },
+    // Sin esto el fallo era silencioso: el panel no cambiaba y no habia forma
+    // de saber si era un error o que la accion no llego a dispararse.
+    onError: (err) =>
+      setToggleFeedback({
+        text: err instanceof ApiError ? err.message : 'No pudimos cambiar el estado de la cuenta',
+        ok: false,
+      }),
   })
 
   const set = (key: keyof typeof form) => (e: { target: { value: string } }) =>
@@ -77,6 +97,7 @@ export function AdminPage() {
   const all = users.data?.items ?? []
   const staff = all.filter((u) => u.role !== 'client')
   const clients = all.filter((u) => u.role === 'client')
+  const currentUserId = currentUser?.id ?? null
 
   return (
     <div className="enter">
@@ -85,6 +106,12 @@ export function AdminPage() {
         title="Equipo"
         subtitle="Usuarios del taller y reglas del programa."
       />
+
+      {toggleFeedback ? (
+        <div className="mb-6">
+          <Alert tone={toggleFeedback.ok ? 'success' : 'danger'}>{toggleFeedback.text}</Alert>
+        </div>
+      ) : null}
 
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-8">
@@ -155,12 +182,14 @@ export function AdminPage() {
             title="Personal"
             users={staff}
             loading={users.isLoading}
+            currentUserId={currentUserId}
             onSetActive={(u, active) => setActive.mutate({ id: u.id, isActive: active })}
           />
           <UserList
             title="Clientes"
             users={clients}
             loading={users.isLoading}
+            currentUserId={currentUserId}
             onSetActive={(u, active) => setActive.mutate({ id: u.id, isActive: active })}
           />
         </div>
@@ -173,11 +202,13 @@ function UserList({
   title,
   users,
   loading,
+  currentUserId,
   onSetActive,
 }: {
   title: string
   users: User[]
   loading: boolean
+  currentUserId: number | null
   onSetActive: (user: User, isActive: boolean) => void
 }) {
   return (
@@ -193,7 +224,7 @@ function UserList({
         <Card className="p-0">
           <ul className="divide-y divide-line">
             {users.map((u) => (
-              <UserRow key={u.id} user={u} onSetActive={onSetActive} />
+              <UserRow key={u.id} user={u} currentUserId={currentUserId} onSetActive={onSetActive} />
             ))}
           </ul>
         </Card>
@@ -209,17 +240,28 @@ function UserList({
 function UserRow({
   user,
   onSetActive,
+  currentUserId,
 }: {
   user: User
   onSetActive: (user: User, isActive: boolean) => void
+  currentUserId: number | null
 }) {
-  // El API trae `is_active` dentro de la fila del usuario.
-  const active = (user as User & { is_active?: number }).is_active !== 0
+  // El API lo envia siempre. Antes no llegaba y el panel no podía distinguir
+  // una cuenta desactivada de una activa.
+  const active = user.is_active !== 0
+  // Desactivarse a uno mismo deja al panel sin ningun admin con sesion: el
+  // siguiente que entre no puede deshacerlo.
+  const isSelf = user.id === currentUserId
 
   return (
     <li className="flex items-center justify-between gap-3 px-5 py-4">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{user.name}</p>
+        <p className="flex items-center gap-2 truncate text-sm font-medium">
+          {user.name}
+          {isSelf ? (
+            <span className="eyebrow shrink-0">Tu</span>
+          ) : null}
+        </p>
         <p className="mt-1 truncate font-mono text-[11px] text-ink-muted">{user.email}</p>
       </div>
 
@@ -227,10 +269,12 @@ function UserRow({
         <Badge tone={user.role === 'admin' ? 'accent' : 'neutral'}>{ROLE_LABEL[user.role]}</Badge>
         {!active ? <Badge tone="danger">Inactivo</Badge> : null}
 
-        {active ? (
+        {isSelf ? (
+          <span className="eyebrow px-2">No puedes desactivarte</span>
+        ) : active ? (
           <ConfirmButton
             label="Desactivar"
-            confirmLabel="Desactivar?"
+            confirmLabel="Confirmar"
             onConfirm={() => onSetActive(user, false)}
           />
         ) : (

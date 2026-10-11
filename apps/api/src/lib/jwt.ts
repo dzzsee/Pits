@@ -32,6 +32,17 @@ export interface Claims {
   sub: number
   role: string
   type: 'access' | 'refresh'
+  /**
+   * Version de sesion del usuario. Se compara con `users.token_version`: al
+   * cambiar la contrasena o desactivar la cuenta se incrementa, y todos los
+   * tokens emitidos antes dejan de ser aceptados.
+   */
+  ver?: number
+  /**
+   * Identificador de la sesion en `sessions`. Permite revocar el cierre de
+   * sesion: el token sigue siendo valido, pero su sesion ya no esta viva.
+   */
+  sid?: string
   iat: number
   exp: number
 }

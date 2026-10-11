@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { notFound } from '../../shared/errors.js'
+import { notFound, badRequest } from '../../shared/errors.js'
 import { validate } from '../../shared/http.js'
 import { authenticate, requireRole, Router } from '../../http/router.js'
 import { toPublicUser } from '../auth/service.js'
-import { hashPassword } from '../../lib/password.js'
+import { hashPassword, passwordProblem } from '../../lib/password.js'
+import { revokeAllForUser } from '../auth/sessions.js'
 import type { UserRow } from '../../db/types.js'
 import { readLoyaltyConfig, updateLoyaltyConfig } from '../loyalty/service.js'
 import { reportsCsv, reportsSummary } from '../reports/service.js'
@@ -34,6 +35,11 @@ adminRouter.post('/users', async (c) => {
     }),
     c.body,
   )
+
+  // El admin da de alta a mecanicos y clientes: la contrasena se fija aqui, y
+  // es la unica barrera porque el hash no se puede subir (tope de Workers).
+  const weak = passwordProblem(body.password)
+  if (weak) throw badRequest(weak)
   const info = await c.db
     .prepare(`INSERT INTO users (role, email, phone, name, password_hash) VALUES (?, ?, ?, ?, ?)`)
     .run(
@@ -82,7 +88,14 @@ adminRouter.patch('/users/:id', async (c) => {
         id,
       )
   }
+  // Desactivar y resetear contrasena cierran las sesiones abiertas de esa
+  // cuenta: si no, el usuario desactivado conservaria el acceso que ya tenia.
+  if (body.isActive === false || body.password) {
+    await revokeAllForUser(c.db, id)
+  }
   if (body.password) {
+    const weak = passwordProblem(body.password)
+    if (weak) throw badRequest(weak)
     await c.db
       .prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
       .run(await hashPassword(body.password), id)

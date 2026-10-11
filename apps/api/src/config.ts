@@ -8,6 +8,9 @@
  * `process.env`, asi que es unaware del runtime en el que corre.
  */
 
+/** El valor de relleno: con el, cualquiera puede firmar tokens de admin. */
+const INSECURE_JWT_SECRET = 'dev-secret-change-me'
+
 export interface AppConfig {
   env: string
   port: number
@@ -37,7 +40,7 @@ function defaults(): AppConfig {
     env: 'development',
     port: 3001,
     corsOrigin: ['http://localhost:5173'],
-    jwt: { secret: 'dev-secret-change-me', accessTtl: '15m', refreshTtl: '30d' },
+    jwt: { secret: INSECURE_JWT_SECRET, accessTtl: '15m', refreshTtl: '30d' },
     shop: { name: 'Pits', currency: 'USD' },
     seed: { adminEmail: 'admin@pits.local', adminPassword: 'admin1234' },
     vapid: { publicKey: '', privateKey: '', subject: 'mailto:admin@pits.local' },
@@ -82,7 +85,7 @@ function readShared(
     port: num(env, 'PORT', base.port ?? 3001),
     corsOrigin: list(env, 'CORS_ORIGIN', base.corsOrigin ?? ['http://localhost:5173']),
     jwt: {
-      secret: str(env, 'JWT_SECRET', base.jwt?.secret ?? 'dev-secret-change-me'),
+      secret: str(env, 'JWT_SECRET', base.jwt?.secret ?? INSECURE_JWT_SECRET),
       accessTtl: str(env, 'JWT_ACCESS_TTL', base.jwt?.accessTtl ?? '15m'),
       refreshTtl: str(env, 'JWT_REFRESH_TTL', base.jwt?.refreshTtl ?? '30d'),
     },
@@ -122,7 +125,40 @@ export function applyConfig(next: AppConfig): AppConfig {
  * y los builtins de Node al Worker, que no los necesita.
  */
 export function loadWorkerConfig(env: Record<string, string | undefined>): AppConfig {
-  return applyConfig(readShared(env, { env: env.NODE_ENV ?? 'production' }))
+  const next = applyConfig(readShared(env, { env: env.NODE_ENV ?? 'production' }))
+  assertSecureConfig(next)
+  return next
 }
 
 export const pushEnabled = () => Boolean(config.vapid.publicKey && config.vapid.privateKey)
+
+/**
+ * Falla si la configuracion permite firmar tokens forjables.
+ *
+ * Sin esto, un despliegue que olvide `wrangler secret put JWT_SECRET` no da
+ * ningun error: arranca, responde y emite tokens que cualquiera puede fabricar
+ * con el secreto de relleno, incluyendo rol `admin`. El fallo es silencioso
+ * hasta que alguien abusa de el.
+ *
+ * Solo se aplica fuera de desarrollo: en local el valor de relleno es el
+ * comportamiento esperado y asi lo documenta `.env.example`.
+ *
+ * @throws Error con el remedy, para que el fallo sea accionable.
+ */
+export function assertSecureConfig(cfg: AppConfig = config): void {
+  if (cfg.env === 'development' || cfg.env === 'test') return
+
+  const { secret } = cfg.jwt
+  if (!secret || secret === INSECURE_JWT_SECRET) {
+    throw new Error(
+      'JWT_SECRET no esta definido. Sin el, los tokens se firman con un secreto ' +
+        'publico y cualquiera puede hacerse administrador. Define JWT_SECRET en el ' +
+        'entorno o subelo con: npx wrangler secret put JWT_SECRET',
+    )
+  }
+  if (secret.length < 32) {
+    throw new Error(
+      `JWT_SECRET es demasiado corto (${secret.length} caracteres). Usa al menos 32.`,
+    )
+  }
+}

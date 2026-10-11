@@ -50,22 +50,75 @@ export function createApp(): Router {
   return router
 }
 
-/** Tamaño maximo del cuerpo, igual que el `express.json` original. */
+/** Tamaño maximo del cuerpo. */
 const MAX_BODY_BYTES = 256 * 1024
 
+/**
+ * Lee el cuerpo acotando mientras lee.
+ *
+ * Antes se hacia `await request.text()` y despues se comparaba el tamaño: el
+ * limite existia solo en el papel, porque el cuerpo entero ya estaba en
+ * memoria cuando se rechazaba. Varios cuerpos grandes a la vez bastaban para
+ * agotar la memoria del isolate antes de que la primera respuesta 413 saliera.
+ *
+ * Ahora se corta la lectura en cuanto se pasa del limite, y se comprueba
+ * `Content-Length` antes de leer nada cuando la plataforma lo facilita.
+ */
 async function readJsonBody(request: Request): Promise<Record<string, unknown> | Response> {
-  const raw = await request.text()
-  if (!raw) return {}
-
-  if (raw.length > MAX_BODY_BYTES) {
-    return json(413, { error: { code: 'bad_request', message: 'Cuerpo demasiado grande' } })
+  // Si el cliente anuncia un tamaño grande, se rechaza sin leer. Es una pista,
+  // no una garantia: si miente, el corte por trozos de abajo lo detecta.
+  const announced = Number(request.headers.get('content-length'))
+  if (Number.isFinite(announced) && announced > MAX_BODY_BYTES) {
+    return tooLarge()
   }
+
+  const raw = await readBounded(request)
+  if (raw === null) return tooLarge()
+  if (!raw) return {}
 
   try {
     return JSON.parse(raw) as Record<string, unknown>
   } catch {
     return json(400, { error: { code: 'bad_request', message: 'Cuerpo JSON invalido' } })
   }
+}
+
+/** Acumula el cuerpo y se detiene en cuanto supera el limite. */
+async function readBounded(request: Request): Promise<string | null> {
+  const body = request.body
+  // Peticiones sin cuerpo, o `GET`/`HEAD` filtradas antes de llegar aqui.
+  if (!body) return ''
+
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+
+    total += value.byteLength
+    if (total > MAX_BODY_BYTES) {
+      // Cancelar cierra el flujo de subida: se deja de transferring en vez de
+      // seguir acumulando hasta que el servidor rebase.
+      await reader.cancel().catch(() => undefined)
+      return null
+    }
+    chunks.push(value)
+  }
+
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(merged)
+}
+
+function tooLarge(): Response {
+  return json(413, { error: { code: 'bad_request', message: 'Cuerpo demasiado grande' } })
 }
 
 /**

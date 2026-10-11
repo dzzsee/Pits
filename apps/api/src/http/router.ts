@@ -190,7 +190,8 @@ export async function authenticate(c: RouteContext): Promise<void> {
   if (!header?.startsWith('Bearer ')) throw unauthorized()
 
   const payload = await verifyToken(header.slice(7), 'access')
-  c.user = await findById(c.db, payload.sub)
+  // `findById` aplica los controles de `is_active`, `token_version` y sesion.
+  c.user = await findById(c.db, payload.sub, payload.ver, payload.sid)
 }
 
 export function requireRole(...roles: Role[]): Handler {

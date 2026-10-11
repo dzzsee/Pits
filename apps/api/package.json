@@ -19,6 +19,7 @@
     "db:rehash": "tsx scripts/rehash-seed.ts",
     "db:reseed": "tsx scripts/reseed.ts",
     "db:reset": "tsx scripts/reset-db.ts",
+    "db:wipe": "tsx scripts/wipe.ts",
     "smoke": "tsx scripts/smoke.ts",
     "sweep": "tsx scripts/sweep.ts",
     "deploy": "wrangler deploy",

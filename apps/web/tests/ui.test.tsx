@@ -108,6 +108,23 @@ describe('Toggle', () => {
     await user.click(sw)
     expect(onChange).toHaveBeenCalledWith(true)
   })
+
+  it('mueve el boton a la derecha al activarse', () => {
+    // El boton se posiciona con `left`, no con `translate-x`: si la direccion
+    // se invirtiera, el control marcado se leeria como apagado.
+    const { unmount } = render(
+      <Toggle checked={false} onChange={() => {}} label="Notificar al cliente" />,
+    )
+    const off = screen.getByRole('switch').querySelector('span')
+    expect(off).toHaveClass('left-0.5')
+    expect(off).not.toHaveClass('left-5')
+    unmount()
+
+    render(<Toggle checked onChange={() => {}} label="Marcar como contratiempo" />)
+    const on = screen.getByRole('switch').querySelector('span')
+    expect(on).toHaveClass('left-5')
+    expect(on).not.toHaveClass('left-0.5')
+  })
 })
 
 describe('SegmentedControl', () => {

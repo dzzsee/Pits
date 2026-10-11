@@ -31,6 +31,16 @@ class_name = "RealtimeHub"
 tag = "v1"
 new_sqlite_classes = ["RealtimeHub"]
 
+# El limitador de peticiones. Sin memoria estable un isolate de Worker no
+# podria contar nada: cada peticion caeria en un isolate distinto.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RateLimiter"]
+
 [vars]
 NODE_ENV = "production"
 SHOP_NAME = "Pits"

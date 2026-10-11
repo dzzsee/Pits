@@ -6,6 +6,7 @@ import { Alert, Button, Field, Input } from '@/components/ui'
 import { Logo } from '@/components/Logo'
 import { IconEye, IconLock } from '@/components/icons'
 import { ApiError } from '@/lib/api'
+import { consumeIdleExpired } from '@/lib/use-idle-logout'
 
 /**
  * Marco de las pantallas de acceso.
@@ -132,6 +133,9 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // La sesion se cerro sola por inactividad: decirlo evita que el usuario
+  // piense que la app fallo.
+  const [idleClosed] = useState(consumeIdleExpired)
 
   if (user) return <Navigate to={homeFor(user.role)} replace />
 
@@ -164,6 +168,11 @@ export function LoginPage() {
       }
     >
       <form onSubmit={onSubmit} className="space-y-5">
+        {idleClosed ? (
+          <Alert tone="info">
+            Tu sesion se cerro por inactividad. Vuelve a entrar para continuar.
+          </Alert>
+        ) : null}
         {error ? <Alert>{error}</Alert> : null}
 
         <Field label="Correo">

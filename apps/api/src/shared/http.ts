@@ -21,9 +21,22 @@ function flattenZod(error: ZodError) {
  */
 export function errorResponse(err: unknown): Response {
   if (err instanceof HttpError) {
-    return json(err.status, {
+    const res = json(err.status, {
       error: { code: err.code ?? 'error', message: err.message, details: err.details },
     })
+
+    // Un 429 sin `Retry-After` deja al cliente sin saber cuando reintentar, y
+    // el resultado es que repite el request hasta empeorar la situacion.
+    const retryAfterMs =
+      err.status === 429 && typeof err.details === 'object' && err.details !== null
+        ? (err.details as { retryAfterMs?: number }).retryAfterMs
+        : undefined
+
+    if (typeof retryAfterMs === 'number') {
+      const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000))
+      res.headers.set('Retry-After', String(seconds))
+    }
+    return res
   }
 
   const message = err instanceof Error ? err.message : String(err)

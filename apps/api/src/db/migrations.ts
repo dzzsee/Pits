@@ -193,4 +193,43 @@ export const migrations: Migration[] = [
     );
     `,
   },
+  {
+    id: 2,
+    name: 'session_revocation',
+    up: /* sql */ `
+    -- Contador de invalidacion. Va dentro del JWT como 'ver', asi que cambiar
+    -- la contrasena (o desactivar la cuenta) bumps el valor y todos los tokens
+    -- emitidos antes dejan de validar en la siguiente peticion, sin necesidad
+    -- de una tabla de sesiones revocadas.
+    ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;
+
+    -- Intentos de login fallidos por cuenta, para el bloqueo por fuerza bruta.
+    -- La clave es el email ya normalizado en minusculas.
+    CREATE TABLE login_attempts (
+      email        TEXT PRIMARY KEY COLLATE NOCASE,
+      failures     INTEGER NOT NULL DEFAULT 0,
+      first_at     INTEGER NOT NULL,
+      locked_until INTEGER NOT NULL DEFAULT 0
+    );
+    `,
+  },
+  {
+    id: 3,
+    name: 'sessions',
+    up: /* sql */ `
+    -- Una fila por sesion iniciada. El identificador va en el JWT como 'sid',
+    -- asi que cerrar sesion es marcar la fila: el token sigue siendo
+    -- criptograficamente valido pero el servidor lo rechaza.
+    --
+    -- Sin esto el cierre de sesion era solo cliente: el refresh token (30 dias)
+    -- sobrevivia al logout y a un cambio de contrasena.
+    CREATE TABLE sessions (
+      id         TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at TEXT
+    );
+    CREATE INDEX idx_sessions_user ON sessions(user_id, revoked_at);
+    `,
+  },
 ]
